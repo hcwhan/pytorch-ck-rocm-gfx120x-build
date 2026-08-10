@@ -1,0 +1,65 @@
+name: PT ROCm toolchain
+description: Python, MSVC, and rocm[devel] for PyTorch source builds (no prebuilt torch)
+
+inputs:
+  python-version:
+    description: Python version (VERSION.lock.json toolchain.python)
+    required: true
+  rocm-index:
+    description: pip index URL for ROCm wheels (VERSION.lock.json toolchain.rocm_index)
+    required: true
+  rocm-version:
+    description: rocm[devel] package version (VERSION.lock.json toolchain.rocm)
+    required: true
+  pip-cache-key:
+    description: Pip toolchain cache key (VERSION.lock.json → PIP_TOOLCHAIN_CACHE_KEY)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Setup MSVC
+      uses: TheMrMilchmann/setup-msvc-dev@v4.1.0
+      with:
+        arch: x64
+
+    - name: Setup Python
+      uses: actions/setup-python@v7
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Restore pip toolchain cache
+      uses: actions/cache/restore@v6
+      id: pip-toolchain-cache
+      with:
+        path: ${{ runner.temp }}/pip-toolchain-cache
+        key: ${{ inputs.pip-cache-key }}
+
+    - name: Export pip cache directory
+      shell: pwsh
+      run: echo "PIP_CACHE_DIR=$env:RUNNER_TEMP/pip-toolchain-cache" >> $env:GITHUB_ENV
+
+    - name: Upgrade pip tooling
+      shell: pwsh
+      run: |
+        python -m pip install --upgrade pip wheel setuptools psutil packaging ninja cmake
+
+    - name: Install ROCm devel headers
+      shell: pwsh
+      run: |
+        python -m pip install `
+          --index-url ${{ inputs.rocm-index }} `
+          "rocm[devel]==${{ inputs.rocm-version }}"
+
+    - name: Initialize ROCm devel tree
+      shell: pwsh
+      run: |
+        python -m rocm_sdk init --quiet
+        python -m rocm_sdk path --root
+
+    - name: Save pip toolchain cache
+      if: steps.pip-toolchain-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ runner.temp }}/pip-toolchain-cache
+        key: ${{ inputs.pip-cache-key }}

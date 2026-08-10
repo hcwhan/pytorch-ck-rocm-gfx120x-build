@@ -1,0 +1,59 @@
+name: PT build with ninja cache
+description: Restore ninja cache, run a build CLI step, then save cache
+
+inputs:
+  pt-src:
+    description: pytorch source root
+    required: true
+  cache-key:
+    description: Primary cache key from 05.toolchain-fingerprint
+    required: true
+  skip-cache-restore:
+    description: When true, skip cache restore (save still gated on cache existence lookup)
+    required: false
+    default: "false"
+  run:
+    description: Shell script executed between cache restore and save
+    required: true
+
+outputs:
+  cache-hit:
+    description: Exact cache key match from restore or lookup-only probe
+    value: ${{ steps.pt-build-cache.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Restore ninja incremental build cache
+      id: pt-build-cache
+      uses: "./.github/actions/A02.pt-ninja-cache-restore"
+      with:
+        pt-src: ${{ inputs.pt-src }}
+        cache-key: ${{ inputs.cache-key }}
+        skip-cache-restore: ${{ inputs.skip-cache-restore }}
+
+    - name: Run build CLI step
+      id: run-build
+      shell: pwsh
+      run: ${{ inputs.run }}
+
+    - name: Delete stale ninja cache entry
+      if: always() && steps.run-build.conclusion == 'success' && steps.pt-build-cache.outputs.cache-hit == 'true'
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        $key = [uri]::EscapeDataString('${{ steps.pt-build-cache.outputs.cache-primary-key }}')
+        $ref = [uri]::EscapeDataString('${{ github.ref }}')
+        gh api --method DELETE "/repos/${{ github.repository }}/actions/caches?key=$key&ref=$ref"
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "Failed to delete stale ninja cache entry (key=$key, ref=$ref, exit=$LASTEXITCODE)"
+          exit $LASTEXITCODE
+        }
+
+    - name: Save ninja incremental build cache
+      if: always() && steps.run-build.conclusion != 'skipped' && (steps.run-build.conclusion == 'success' || steps.pt-build-cache.outputs.cache-hit != 'true')
+      uses: "./.github/actions/A04.pt-ninja-cache-save"
+      with:
+        pt-src: ${{ inputs.pt-src }}
+        cache-primary-key: ${{ steps.pt-build-cache.outputs.cache-primary-key }}

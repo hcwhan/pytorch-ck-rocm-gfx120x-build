@@ -1,0 +1,24 @@
+{
+  "toolchain": {
+    "python": "3.12",
+    "rocm_index": "https://repo.amd.com/rocm/whl-multi-arch/",
+    "rocm": "7.14.0"
+  },
+  "pytorch": {
+    "repo": "https://github.com/pytorch/pytorch.git",
+    "build_commit": "be878749ff927a9e296531e3bca080efef476e8c",
+    "build_commit_date": "2026-06-26T22:52:11Z"
+  },
+  "compile": {
+    "gpu_archs": "gfx1201",
+    "ck_opt_dim": "32,64,128,256"
+  },
+  "wheel": {
+    "wheel_local_version": "rocm7.14.0.ck.gfx1201",
+    "wheel_artifact_name": "torch-ck-gfx1201-cp312-rocm7.14.0"
+  },
+  "release": {
+    "release_tag_prefix": "torch-ck-gfx1201-cp312-rocm7.14.0",
+    "release_title_prefix": "PyTorch CK SDPA gfx1201 Windows"
+  }
+}

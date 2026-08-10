@@ -1,0 +1,49 @@
+name: PT verify and publish
+description: CPU smoke test (09.verify), upload wheel artifact, optional GitHub Release (10.publish + softprops)
+
+inputs:
+  build-caches:
+    description: Path relative to GITHUB_WORKSPACE for 09.verify --build-caches
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Smoke test (CPU)
+      shell: pwsh
+      run: |
+        $distDir = Join-Path $env:GITHUB_WORKSPACE 'dist'
+        $buildCaches = Join-Path $env:GITHUB_WORKSPACE '${{ inputs.build-caches }}'
+        npx tsx scripts/cli.ts 09.verify --dist-dir $distDir --build-caches $buildCaches
+
+    - name: Upload wheel artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ env.WHEEL_ARTIFACT_NAME }}
+        path: |
+          dist/*.whl
+          dist/*.sha256
+          dist/wheel.manifest.json
+        retention-days: 7
+
+    - name: Prepare release metadata
+      if: ${{ github.event.inputs.publish_release != 'false' }}
+      id: publish
+      shell: pwsh
+      run: |
+        $distDir = Join-Path $env:GITHUB_WORKSPACE 'dist'
+        npx tsx scripts/cli.ts 10.publish --dist-dir $distDir --workflow-name "${{ github.workflow }}"
+
+    - name: Publish GitHub Release
+      if: ${{ github.event.inputs.publish_release != 'false' }}
+      uses: softprops/action-gh-release@v3
+      with:
+        tag_name: ${{ steps.publish.outputs.release-tag }}
+        name: ${{ steps.publish.outputs.release-title }}
+        body_path: ${{ steps.publish.outputs.body-path }}
+        files: |
+          dist/*.whl
+          dist/*.sha256
+          dist/wheel.manifest.json
+        prerelease: true
+        make_latest: false
