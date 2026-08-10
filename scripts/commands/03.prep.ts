@@ -46,29 +46,6 @@ export function runPrep(options: { ptSrc: string }): void {
     "FETCH_HEAD",
   ]);
 
-  const submodulePaths = [
-    "third_party/composable_kernel",
-    "third_party/flash-attention",
-    "third_party/fbgemm",
-    "third_party/gloo",
-    "third_party/tensorpipe",
-    "third_party/kineto",
-    "third_party/onnx",
-    "third_party/pocketfft",
-    "third_party/pybind11",
-  ];
-  run("git", [
-    "-c",
-    "core.longpaths=true",
-    "-C",
-    root,
-    "submodule",
-    "update",
-    "--init",
-    "--depth",
-    "1",
-    ...submodulePaths,
-  ]);
   run("git", [
     "-c",
     "core.longpaths=true",
@@ -80,7 +57,6 @@ export function runPrep(options: { ptSrc: string }): void {
     "--recursive",
     "--depth",
     "1",
-    "third_party/ideep",
   ]);
 
   const gitAuthorDate = runCapture("git", [
