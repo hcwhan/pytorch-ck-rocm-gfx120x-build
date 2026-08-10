@@ -1,4 +1,4 @@
-name: Build PyTorch CK SDPA serial (Windows gfx1201)
+name: Build PyTorch CK SDPA serial (Windows gfx120x)
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ on:
         default: true
 
 concurrency:
-  group: build-torch-ck-gfx1201-serial
+  group: build-torch-ck-gfx120x-serial
   cancel-in-progress: true
 
 permissions:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deploy-time GPU smoke test for torch CK SDPA (gfx1201 hardware; not run in CI)."""
+"""Deploy-time GPU smoke test for torch CK SDPA (gfx120x hardware; not run in CI)."""
 from __future__ import annotations
 
 import argparse
@@ -21,6 +21,17 @@ def parse_ck_opt_dims(ck_opt_dim: str) -> list[int]:
     if not dims:
         raise SystemExit("VERSION.lock.json compile.ck_opt_dim is missing or empty")
     return dims
+
+
+def parse_gpu_archs(gpu_archs: str) -> list[str]:
+    parts = [
+        part.strip().lower()
+        for part in gpu_archs.replace(",", ";").split(";")
+        if part.strip()
+    ]
+    if not parts:
+        raise SystemExit("VERSION.lock.json compile.gpu_archs is missing or empty")
+    return parts
 
 
 def main() -> None:
@@ -45,7 +56,7 @@ def main() -> None:
     if not isinstance(ck_opt_dim, str) or not ck_opt_dim.strip():
         raise SystemExit("VERSION.lock.json compile.ck_opt_dim is missing")
 
-    expected_arch = gpu_archs.strip().lower()
+    expected_archs = parse_gpu_archs(gpu_archs)
     head_dims = parse_ck_opt_dims(ck_opt_dim)
 
     print(f"GPU smoke test on {gpu_archs} (requires ROCm PyTorch + GPU)")
@@ -66,10 +77,13 @@ def main() -> None:
     arch = (getattr(props, "gcnArchName", None) or "").lower()
     print(f"GPU: {props.name} (gcnArchName={arch or 'unknown'})")
 
-    if expected_arch not in arch:
+    if not any(expected in arch for expected in expected_archs):
         raise SystemExit(
-            f"ERROR: expected {expected_arch!r} not found in gcnArchName {arch!r}"
+            "ERROR: gcnArchName "
+            f"{arch!r} does not match lock compile.gpu_archs {expected_archs!r}"
         )
+    matched = next(expected for expected in expected_archs if expected in arch)
+    print(f"OK GPU arch matches lock entry {matched!r}")
 
     batch, seqlen, nheads = 1, 64, 4
     for headdim in head_dims:

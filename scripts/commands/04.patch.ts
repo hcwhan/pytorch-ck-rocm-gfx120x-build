@@ -1,5 +1,11 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import {
+  formatGpuArchCmakeList,
+  formatGpuArchCppDefines,
+  formatGpuArchCppStrings,
+  parseGpuArchList,
+} from "../lib/gpu-archs.js";
 import { requireLockEnv } from "../lib/require-env.js";
 
 type PatchPoint = {
@@ -53,6 +59,10 @@ export function runPatch(options: { ptSrc: string }): void {
   const root = path.resolve(options.ptSrc);
   const ckTargets = "--targets gfx9,gfx950,gfx12";
   const ckOptDim = requireLockEnv("CK_OPT_DIM");
+  const gpuArchList = parseGpuArchList(requireLockEnv("GPU_ARCHS"));
+  const gpuArchCpp = formatGpuArchCppStrings(gpuArchList);
+  const gpuArchDefines = formatGpuArchCppDefines(gpuArchList);
+  const gpuArchCmake = formatGpuArchCmakeList(gpuArchList);
 
   applyPoints(path.join(root, "CMakeLists.txt"), [
     {
@@ -75,7 +85,7 @@ export function runPatch(options: { ptSrc: string }): void {
     {
       name: "ck-sdpa-gfx12-arch-list",
       before: '"gfx942", "gfx950",',
-      after: '"gfx942", "gfx950", "gfx1200", "gfx1201",',
+      after: `"gfx942", "gfx950", ${gpuArchCpp},`,
     },
   ]);
 
@@ -87,7 +97,7 @@ export function runPatch(options: { ptSrc: string }): void {
         before:
           "#if (defined(__gfx90a__) || defined(__gfx942__) || defined(__gfx950__))",
         after:
-          "#if (defined(__gfx90a__) || defined(__gfx942__) || defined(__gfx950__) || \\\n defined(__gfx1200__) || defined(__gfx1201__))",
+          `#if (defined(__gfx90a__) || defined(__gfx942__) || defined(__gfx950__) || \\\n ${gpuArchDefines})`,
         replaceAll: true,
       },
     ],
@@ -99,14 +109,14 @@ export function runPatch(options: { ptSrc: string }): void {
       before: `      set(_have_ck_sdpa_arch FALSE)
       foreach(ARCH gfx942 gfx950)`,
       after: `      set(_have_ck_sdpa_arch FALSE)
-      foreach(ARCH gfx942 gfx950 gfx1200 gfx1201)`,
+      foreach(ARCH gfx942 gfx950 ${gpuArchCmake})`,
     },
     {
       name: "aten-ck-sdpa-hip-arches-foreach",
       before: `    foreach(ARCH gfx942 gfx950)
       if("\${ARCH}" IN_LIST PYTORCH_ROCM_ARCH)
         list(APPEND _ck_sdpa_hip_arches \${ARCH})`,
-      after: `    foreach(ARCH gfx942 gfx950 gfx1200 gfx1201)
+      after: `    foreach(ARCH gfx942 gfx950 ${gpuArchCmake})
       if("\${ARCH}" IN_LIST PYTORCH_ROCM_ARCH)
         list(APPEND _ck_sdpa_hip_arches \${ARCH})`,
     },
@@ -138,5 +148,7 @@ export function runPatch(options: { ptSrc: string }): void {
     },
   ]);
 
-  console.log(`Patched pytorch source at ${root} for gfx1201 CK SDPA`);
+  console.log(
+    `Patched pytorch source at ${root} for gfx120x CK SDPA (GPU_ARCHS=${gpuArchCmake})`,
+  );
 }

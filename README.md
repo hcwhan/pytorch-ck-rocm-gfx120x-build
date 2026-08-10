@@ -1,8 +1,8 @@
-# pytorch-ck-rocm-gfx1201-build
+# pytorch-ck-rocm-gfx120x-build
 
 [English](README.en-US.md)
 
-使用 GitHub Actions 为 **Windows / gfx1201 / Python 3.12** 从源码编译带 **ROCm CK Tile SDPA** 的 **PyTorch** wheel。
+使用 GitHub Actions 为 **Windows / gfx120x（RDNA4）/ Python 3.12** 从源码编译带 **ROCm CK Tile SDPA** 的 **PyTorch** wheel。
 
 工具链版本以 **`VERSION.lock.json`** 为唯一来源，经 workflow 内 `npx tsx scripts/cli.ts 01.config -w $env:GITHUB_WORKSPACE --export-github-env` 注入 CI。
 
@@ -10,7 +10,7 @@
 
 | 项 | 值 |
 |----|-----|
-| GPU 架构 | `gfx1201`（RDNA4，Navi 48） |
+| GPU 架构 | lock **`compile.gpu_archs`**（当前 `gfx1200;gfx1201`） |
 | 系统 | Windows |
 | Python | 3.12 |
 | PyTorch 源码 | `VERSION.lock.json` **`pytorch.build_commit`** |
@@ -23,7 +23,7 @@
 |------|------|------|
 | `toolchain` | `python`、`rocm_index`、`rocm` | pip 工具链 pin（**不安装预编译 torch**） |
 | `pytorch` | `repo`、`build_commit`、`build_commit_date` | 每次构建精确 clone 的 PyTorch 源码；**升级 PyTorch 时改 `build_commit` 与 `build_commit_date`** |
-| `compile` | `gpu_archs`、`ck_opt_dim` | `PYTORCH_ROCM_ARCH` 与 CK FMHA codegen 档位 |
+| `compile` | `gpu_archs`、`ck_opt_dim` | `PYTORCH_ROCM_ARCH` 与 CK FMHA codegen 档位（**唯一架构源**） |
 | `wheel` | `wheel_local_version` | wheel 的 `+local` 标签（env `WHEEL_LOCAL_VERSION`） |
 | `wheel` | `wheel_artifact_name` | GitHub Actions artifact 名称 |
 | `release` | `release_tag_prefix` | Release tag 前缀（`{prefix}-serial-build{run_number}`） |
@@ -31,30 +31,28 @@
 
 `EXPECTED_WHEEL_PATTERN` 由 `wheel.wheel_local_version` + `toolchain.python` 在 `version-lock.ts` 推导，不在 lock 中存储。
 
-规则：CI 始终 clone **`pytorch.build_commit`**（`fetch` + `checkout FETCH_HEAD`），再经 `04.patch` 启用 Windows CK SDPA 并加入 gfx1201 支持。
+规则：CI 始终 clone **`pytorch.build_commit`**（`fetch` + `checkout FETCH_HEAD`），再经 `04.patch` 启用 Windows CK SDPA；patch 内 runtime arch 列表与 `compile.gpu_archs` 同源。
 
-### 适用显卡（`gfx1201`）
+### 适用显卡（gfx120x / RDNA4）
 
-| 类别 | 型号 |
-|------|------|
-| 消费级 | Radeon RX 9070 XT / RX 9070 / RX 9070 GRE |
-| 专业级 | Radeon AI PRO R9700 / R9700S / R9600D |
-
-> **`gfx1200`** 型号（如 RX 9060 系列）不在本 wheel 目标内。
+| HIP 代号 | 芯片 | 代表型号 |
+|----------|------|----------|
+| **gfx1201** | Navi 48 | RX 9070 XT / RX 9070 / RX 9070 GRE；Radeon AI PRO R9700 系列 |
+| **gfx1200** | Navi 44 | RX 9060 XT / RX 9060 / RX 9060 XT LP；RX 9050 系列 |
 
 ## 编译配置
 
 - **全量 PyTorch 源码编译**（`setup.py build` → `bdist_wheel`）
-- **USE_ROCM_CK_SDPA=ON**（Windows + gfx1201 补丁）
-- **`PYTORCH_ROCM_ARCH=gfx1201`**
-- CK FMHA **`ck_opt_dim=32,64,128,256`**
-- wheel local tag：`rocm7.14.0.ck.gfx1201`（见 `wheel.wheel_local_version`）
+- **USE_ROCM_CK_SDPA=ON**（Windows + gfx120x 补丁）
+- **`PYTORCH_ROCM_ARCH`** = lock `compile.gpu_archs`（Windows 分号分隔）
+- CK FMHA **`ck_opt_dim`** = lock `compile.ck_opt_dim`（当前 `32,64,128,256`）
+- wheel local tag：`rocm7.14.0.ck.gfx120x`（见 `wheel.wheel_local_version`）
 
 ## 触发方式
 
 | Workflow | 用途 | 触发 |
 |----------|------|------|
-| **Build PyTorch CK SDPA serial (Windows gfx1201)** | 单 job 全量编译 + ninja cache + 打 wheel | **仅手动** |
+| **Build PyTorch CK SDPA serial (Windows gfx120x)** | 单 job 全量编译 + ninja cache + 打 wheel | **仅手动** |
 
 > 推送到 `main` **不会**自动触发编译。
 
@@ -66,13 +64,13 @@
 | `skip_cache_restore` | `false` | 设为 `true` 时跳过 cache restore（仅 lookup 探测，仍会在编译后保存） |
 | `publish_release` | `true` | 设为 `false` 时跳过 GitHub Release 上传 |
 
-### 串行（`build-pytorch-ck-gfx1201-serial.yml`）
+### 串行（`build-pytorch-ck-gfx120x-serial.yml`）
 
 | Job | 作用 | 超时 |
 |-----|------|------|
 | `compile-and-wheel` | clone+patch、toolchain、ninja cache、`06.build` + `08.wheel`、CPU smoke test | 12 h |
 
-- Cache key 含 `VERSION.lock.json` SHA256 前 8 位（`torch-ck-gfx1201-serial-v1-{lockHash8}-`）及三段工具链指纹（MSVC 工具集 / ROCm clang / pip 工具链）；**仅精确匹配**（无 `restore-keys`）。
+- Cache key 含 `VERSION.lock.json` SHA256 前 8 位（`torch-ck-gfx120x-serial-v2-{lockHash8}-`）及三段工具链指纹（MSVC 工具集 / ROCm clang / pip 工具链）；**仅精确匹配**（无 `restore-keys`）。
 
 ### 构建阶段
 
@@ -95,8 +93,8 @@ GitHub Release（构建成功后自动上传；`publish_release=true` 时）：
 
 | 字段 | 示例 |
 |------|------|
-| Tag | `torch-ck-gfx1201-cp312-rocm7.14.0-serial-build123` |
-| 标题 | `PyTorch CK SDPA gfx1201 Windows 2026.08.10 19:00:00` |
+| Tag | `torch-ck-gfx120x-cp312-rocm7.14.0-serial-build123` |
+| 标题 | `PyTorch CK SDPA gfx120x Windows 2026.08.10 19:00:00` |
 
 - `torch-*.whl`
 - `torch-*.whl.sha256`
@@ -104,13 +102,13 @@ GitHub Release（构建成功后自动上传；`publish_release=true` 时）：
 
 ```powershell
 gh release list
-gh release download torch-ck-gfx1201-cp312-rocm7.14.0-serial-build123 -D .\dist
+gh release download torch-ck-gfx120x-cp312-rocm7.14.0-serial-build123 -D .\dist
 ```
 
 预期 wheel 文件名（由 `wheel.wheel_local_version` + `toolchain.python` 推导）：
 
 ```text
-torch-*+rocm7.14.0.ck.gfx1201*-cp312-cp312-win_amd64.whl
+torch-*+rocm7.14.0.ck.gfx120x*-cp312-cp312-win_amd64.whl
 ```
 
 ## 验证
@@ -118,9 +116,9 @@ torch-*+rocm7.14.0.ck.gfx1201*-cp312-cp312-win_amd64.whl
 | 检查 | 脚本 |
 |------|------|
 | CI smoke test（CPU） | `npx tsx scripts/cli.ts 09.verify --dist-dir dist --build-caches dist\build-caches.json` |
-| 部署前 GPU smoke test（gfx1201 真机） | `python test/gpu-smoke-test.py -w .` |
+| 部署前 GPU smoke test（gfx120x 真机） | `python test/gpu-smoke-test.py -w .` |
 
-Smoke test：wheel 文件名/结构 → pip 安装 → 校验 `torch.backends.cuda.is_ck_sdpa_available()`。GPU 上跑 CK SDPA 见 `test/gpu-smoke-test.py`（部署前在真机手动跑）。
+Smoke test：wheel 文件名/结构（含 CK dim 符号）→ pip 安装 → 校验 `torch.backends.cuda.is_ck_sdpa_available()`。GPU 上跑 CK SDPA 见 `test/gpu-smoke-test.py`（部署前在真机手动跑）。
 
 ## 安装到 ComfyUI
 

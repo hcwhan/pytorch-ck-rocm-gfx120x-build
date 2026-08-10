@@ -11,7 +11,7 @@ import { runPublish } from "./commands/10.publish.js";
 
 const program = new Command();
 
-program.name("pt-build").description("PyTorch CK SDPA gfx1201 build CLI");
+program.name("pt-build").description("PyTorch CK SDPA gfx120x build CLI");
 
 program
   .command("01.config")
@@ -35,7 +35,7 @@ program
 
 program
   .command("04.patch")
-  .description("Patch pytorch for Windows CK SDPA + gfx1201")
+  .description("Patch pytorch for Windows CK SDPA + gfx120x")
   .requiredOption("--pt-src <path>")
   .action((opts) => {
     runPatch({ ptSrc: opts.ptSrc });
