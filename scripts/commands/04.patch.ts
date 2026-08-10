@@ -264,48 +264,48 @@ function buildInferenceOnlyAtenPoints(): PatchPoint[] {
   return [
     {
       name: "aten-ck-sdpa-disable-backward-def",
-      before: ` __GCC_HAVE_DWARF2_CFI_ASM=1
- USE_ROCM_CK_SDPA)`,
-      after: ` __GCC_HAVE_DWARF2_CFI_ASM=1
- FLASHATTENTION_DISABLE_BACKWARD
- USE_ROCM_CK_SDPA)`,
+      before: `        __GCC_HAVE_DWARF2_CFI_ASM=1
+        USE_ROCM_CK_SDPA)`,
+      after: `        __GCC_HAVE_DWARF2_CFI_ASM=1
+        FLASHATTENTION_DISABLE_BACKWARD
+        USE_ROCM_CK_SDPA)`,
     },
     {
       name: "aten-ck-sdpa-skip-fav-v3",
-      before: ` add_subdirectory(native/transformers/hip/flash_attn/ck)
- # FAv3 Generation
- add_subdirectory(native/transformers/hip/flash_attn/ck/fav_v3)
- file(GLOB ck_sdpa_sources_hip CONFIGURE_DEPENDS
- "native/transformers/hip/flash_attn/ck/*.hip"
- "native/transformers/hip/flash_attn/ck/fav_v3/*.hip")`,
-      after: ` add_subdirectory(native/transformers/hip/flash_attn/ck)
- # FAv3 Generation skipped (inference-only CK FMHA build; MI3xx ASM bwd)
- file(GLOB ck_sdpa_sources_hip CONFIGURE_DEPENDS
- "native/transformers/hip/flash_attn/ck/*.hip")
- list(FILTER ck_sdpa_sources_hip EXCLUDE REGEX "fmha_bwd")`,
+      before: `    add_subdirectory(native/transformers/hip/flash_attn/ck)
+    # FAv3 Generation
+    add_subdirectory(native/transformers/hip/flash_attn/ck/fav_v3)
+    file(GLOB ck_sdpa_sources_hip CONFIGURE_DEPENDS
+         "native/transformers/hip/flash_attn/ck/*.hip"
+         "native/transformers/hip/flash_attn/ck/fav_v3/*.hip")`,
+      after: `    add_subdirectory(native/transformers/hip/flash_attn/ck)
+    # FAv3 Generation skipped (inference-only CK FMHA build; MI3xx ASM bwd)
+    file(GLOB ck_sdpa_sources_hip CONFIGURE_DEPENDS
+         "native/transformers/hip/flash_attn/ck/*.hip")
+    list(FILTER ck_sdpa_sources_hip EXCLUDE REGEX "fmha_bwd")`,
     },
     {
       name: "aten-ck-sdpa-omit-aiter-hsa-header",
-      before: ` target_compile_definitions(ck_sdpa PUBLIC \${CK_SDPA_EXTRA_HIPCC_OPTIONS})
- target_compile_definitions(ck_sdpa PRIVATE AITER_EMBEDDED_HSA_HEADER="aiter_embedded_hsa.h")
- target_include_directories(ck_sdpa PUBLIC
- \${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/composable_kernel/include
- \${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/composable_kernel/library/include
- \${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/composable_kernel/example/ck_tile/01_fmha
- \${CMAKE_CURRENT_BINARY_DIR}/composable_kernel
- \${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/aiter/csrc/include
- \${CMAKE_CURRENT_SOURCE_DIR}/native/transformers/hip/flash_attn/ck
- \${AITER_EMBEDDED_HSA_HEADER_DIR}
- )`,
-      after: ` target_compile_definitions(ck_sdpa PUBLIC \${CK_SDPA_EXTRA_HIPCC_OPTIONS})
- target_include_directories(ck_sdpa PUBLIC
- \${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/composable_kernel/include
- \${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/composable_kernel/library/include
- \${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/composable_kernel/example/ck_tile/01_fmha
- \${CMAKE_CURRENT_BINARY_DIR}/composable_kernel
- \${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/aiter/csrc/include
- \${CMAKE_CURRENT_SOURCE_DIR}/native/transformers/hip/flash_attn/ck
- )`,
+      before: `    target_compile_definitions(ck_sdpa PUBLIC \${CK_SDPA_EXTRA_HIPCC_OPTIONS})
+    target_compile_definitions(ck_sdpa PRIVATE AITER_EMBEDDED_HSA_HEADER="aiter_embedded_hsa.h")
+    target_include_directories(ck_sdpa PUBLIC
+                               \${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/composable_kernel/include
+                               \${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/composable_kernel/library/include
+                               \${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/composable_kernel/example/ck_tile/01_fmha
+                               \${CMAKE_CURRENT_BINARY_DIR}/composable_kernel
+                               \${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/aiter/csrc/include
+                               \${CMAKE_CURRENT_SOURCE_DIR}/native/transformers/hip/flash_attn/ck
+                               \${AITER_EMBEDDED_HSA_HEADER_DIR}
+                               )`,
+      after: `    target_compile_definitions(ck_sdpa PUBLIC \${CK_SDPA_EXTRA_HIPCC_OPTIONS})
+    target_include_directories(ck_sdpa PUBLIC
+                               \${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/composable_kernel/include
+                               \${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/composable_kernel/library/include
+                               \${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/composable_kernel/example/ck_tile/01_fmha
+                               \${CMAKE_CURRENT_BINARY_DIR}/composable_kernel
+                               \${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/aiter/csrc/include
+                               \${CMAKE_CURRENT_SOURCE_DIR}/native/transformers/hip/flash_attn/ck
+                               )`,
     },
   ];
 }
