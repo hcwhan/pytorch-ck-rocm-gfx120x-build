@@ -160,18 +160,18 @@ export function runPatch(options: { ptSrc: string }): void {
     },
     {
       name: "ck-codegen-emit-fwd-result",
-      before: `execute_process(COMMAND \${CK_FMHA_GENERATE} --api fwd --optdim=${ckOptDim} --receipt 4 --filter "*_lse*ntrload*nsink*" --output_dir \${CMAKE_CURRENT_LIST_DIR}
+      before: `execute_process(COMMAND \${CK_FMHA_GENERATE} --api fwd  --optdim=${ckOptDim} --receipt 4 --filter "*_lse*ntrload*nsink*" --output_dir \${CMAKE_CURRENT_LIST_DIR}
 )
 
 if(ret AND NOT ret EQUAL 0)
- message( FATAL_ERROR "CK Tile FMHA FAILED to generate FWD kernels.")
+  message( FATAL_ERROR "CK Tile FMHA FAILED to generate FWD kernels.")
 endif()`,
-      after: `execute_process(COMMAND \${CK_FMHA_GENERATE} ${ckTargets} --api fwd --optdim=${ckOptDim} --receipt 4 --filter "*_lse*ntrload*nsink*" --output_dir \${CMAKE_CURRENT_LIST_DIR}
+      after: `execute_process(COMMAND \${CK_FMHA_GENERATE} ${ckTargets} --api fwd  --optdim=${ckOptDim} --receipt 4 --filter "*_lse*ntrload*nsink*" --output_dir \${CMAKE_CURRENT_LIST_DIR}
  RESULT_VARIABLE ck_fmha_emit_fwd_ret
 )
 
 if(ck_fmha_emit_fwd_ret AND NOT ck_fmha_emit_fwd_ret EQUAL 0)
- message( FATAL_ERROR "CK Tile FMHA FAILED to generate FWD kernels.")
+  message( FATAL_ERROR "CK Tile FMHA FAILED to generate FWD kernels.")
 endif()`,
     },
     {
@@ -180,14 +180,14 @@ endif()`,
 )
 
 if(ret AND NOT ret EQUAL 0)
- message( FATAL_ERROR "CK Tile FMHA FAILED to generate FWD_SPLITKV kernels.")
+    message( FATAL_ERROR "CK Tile FMHA FAILED to generate FWD_SPLITKV kernels.")
 endif()`,
       after: `execute_process(COMMAND \${CK_FMHA_GENERATE} ${ckTargets} --api fwd_splitkv --optdim=${ckOptDim} --receipt 4 --filter "*psdv*_lse*_nsquant*" --output_dir \${CMAKE_CURRENT_LIST_DIR}
  RESULT_VARIABLE ck_fmha_emit_fwd_splitkv_ret
 )
 
 if(ck_fmha_emit_fwd_splitkv_ret AND NOT ck_fmha_emit_fwd_splitkv_ret EQUAL 0)
- message( FATAL_ERROR "CK Tile FMHA FAILED to generate FWD_SPLITKV kernels.")
+    message( FATAL_ERROR "CK Tile FMHA FAILED to generate FWD_SPLITKV kernels.")
 endif()`,
     },
     {
@@ -196,68 +196,68 @@ endif()`,
 )
 
 if(ret AND NOT ret EQUAL 0)
- message( FATAL_ERROR "CK Tile FMHA FAILED to generate FWD_APPENDKV kernels.")
+    message( FATAL_ERROR "CK Tile FMHA FAILED to generate FWD_APPENDKV kernels.")
 endif()`,
       after: `execute_process(COMMAND \${CK_FMHA_GENERATE} ${ckTargets} --api fwd_appendkv --optdim=${ckOptDim} --receipt 4 --filter "*psskddv_*" --output_dir \${CMAKE_CURRENT_LIST_DIR}
  RESULT_VARIABLE ck_fmha_emit_fwd_appendkv_ret
 )
 
 if(ck_fmha_emit_fwd_appendkv_ret AND NOT ck_fmha_emit_fwd_appendkv_ret EQUAL 0)
- message( FATAL_ERROR "CK Tile FMHA FAILED to generate FWD_APPENDKV kernels.")
+    message( FATAL_ERROR "CK Tile FMHA FAILED to generate FWD_APPENDKV kernels.")
 endif()`,
     },
     {
       name: "ck-codegen-emit-bwd-result",
       before: `execute_process(COMMAND \${CK_FMHA_GENERATE} --api bwd --optdim=${ckOptDim} --receipt 4 --filter "*psdv*@*psd*@*_pd1dv1*_ntrload*" --output_dir \${CMAKE_CURRENT_LIST_DIR}
- RESULT_VARIABLE ret
+  RESULT_VARIABLE ret
 )
 
 if(ret AND NOT ret EQUAL 0)
- message( FATAL_ERROR "CK Tile FMHA FAILED to generate BWD kernels.")
+  message( FATAL_ERROR "CK Tile FMHA FAILED to generate BWD kernels.")
 endif()`,
       after: `execute_process(COMMAND \${CK_FMHA_GENERATE} ${ckTargets} --api bwd --optdim=${ckOptDim} --receipt 4 --filter "*psdv*@*psd*@*_pd1dv1*_ntrload*" --output_dir \${CMAKE_CURRENT_LIST_DIR}
- RESULT_VARIABLE ck_fmha_emit_bwd_ret
+  RESULT_VARIABLE ck_fmha_emit_bwd_ret
 )
 
 if(ck_fmha_emit_bwd_ret AND NOT ck_fmha_emit_bwd_ret EQUAL 0)
- message( FATAL_ERROR "CK Tile FMHA FAILED to generate BWD kernels.")
+  message( FATAL_ERROR "CK Tile FMHA FAILED to generate BWD kernels.")
 endif()`,
     },
     {
       name: "ck-make-kernel-pt-fwd-python",
       before: `execute_process(
- COMMAND bash -c "\${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.sh \${CMAKE_CURRENT_LIST_DIR}/fwd_blob_list.txt"
- RESULT_VARIABLE ret)`,
+  COMMAND bash -c "\${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.sh \${CMAKE_CURRENT_LIST_DIR}/fwd_blob_list.txt"
+  RESULT_VARIABLE ret)`,
       after: `execute_process(
- COMMAND \${Python3_EXECUTABLE} \${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.py \${CMAKE_CURRENT_LIST_DIR}/fwd_blob_list.txt
- RESULT_VARIABLE ret)`,
+  COMMAND \${Python3_EXECUTABLE} \${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.py \${CMAKE_CURRENT_LIST_DIR}/fwd_blob_list.txt
+  RESULT_VARIABLE ret)`,
     },
     {
       name: "ck-make-kernel-pt-fwd-splitkv-python",
       before: `execute_process(
- COMMAND bash -c "\${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.sh \${CMAKE_CURRENT_LIST_DIR}/fwd_splitkv_blob_list.txt"
- RESULT_VARIABLE ret)`,
+  COMMAND bash -c "\${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.sh \${CMAKE_CURRENT_LIST_DIR}/fwd_splitkv_blob_list.txt"
+  RESULT_VARIABLE ret)`,
       after: `execute_process(
- COMMAND \${Python3_EXECUTABLE} \${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.py \${CMAKE_CURRENT_LIST_DIR}/fwd_splitkv_blob_list.txt
- RESULT_VARIABLE ret)`,
+  COMMAND \${Python3_EXECUTABLE} \${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.py \${CMAKE_CURRENT_LIST_DIR}/fwd_splitkv_blob_list.txt
+  RESULT_VARIABLE ret)`,
     },
     {
       name: "ck-make-kernel-pt-fwd-appendkv-python",
       before: `execute_process(
- COMMAND bash -c "\${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.sh \${CMAKE_CURRENT_LIST_DIR}/fwd_appendkv_blob_list.txt"
- RESULT_VARIABLE ret)`,
+  COMMAND bash -c "\${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.sh \${CMAKE_CURRENT_LIST_DIR}/fwd_appendkv_blob_list.txt"
+  RESULT_VARIABLE ret)`,
       after: `execute_process(
- COMMAND \${Python3_EXECUTABLE} \${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.py \${CMAKE_CURRENT_LIST_DIR}/fwd_appendkv_blob_list.txt
- RESULT_VARIABLE ret)`,
+  COMMAND \${Python3_EXECUTABLE} \${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.py \${CMAKE_CURRENT_LIST_DIR}/fwd_appendkv_blob_list.txt
+  RESULT_VARIABLE ret)`,
     },
     {
       name: "ck-make-kernel-pt-bwd-python",
       before: `execute_process(
- COMMAND bash -c "\${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.sh \${CMAKE_CURRENT_LIST_DIR}/bwd_blob_list.txt"
- RESULT_VARIABLE ret)`,
+  COMMAND bash -c "\${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.sh \${CMAKE_CURRENT_LIST_DIR}/bwd_blob_list.txt"
+  RESULT_VARIABLE ret)`,
       after: `execute_process(
- COMMAND \${Python3_EXECUTABLE} \${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.py \${CMAKE_CURRENT_LIST_DIR}/bwd_blob_list.txt
- RESULT_VARIABLE ret)`,
+  COMMAND \${Python3_EXECUTABLE} \${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.py \${CMAKE_CURRENT_LIST_DIR}/bwd_blob_list.txt
+  RESULT_VARIABLE ret)`,
     },
     {
       name: "ck-rename-cpp-to-hip-cmake",
