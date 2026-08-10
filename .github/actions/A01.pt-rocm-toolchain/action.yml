@@ -51,11 +51,38 @@ runs:
           --index-url ${{ inputs.rocm-index }} `
           "rocm[devel]==${{ inputs.rocm-version }}"
 
+    - name: Install ROCm runtime libraries and device wheels
+      shell: pwsh
+      run: |
+        if (-not $env:GPU_ARCHS) {
+          throw "GPU_ARCHS is not set (run 01.config --export-github-env first)"
+        }
+        $devicePackages = @()
+        foreach ($arch in ($env:GPU_ARCHS -split ';')) {
+          $trimmed = $arch.Trim()
+          if ($trimmed) {
+            $devicePackages += "rocm-sdk-device-$trimmed==${{ inputs.rocm-version }}"
+          }
+        }
+        if ($devicePackages.Count -lt 1) {
+          throw "GPU_ARCHS is empty: '$env:GPU_ARCHS'"
+        }
+        python -m pip install `
+          --index-url ${{ inputs.rocm-index }} `
+          "rocm-sdk-libraries==${{ inputs.rocm-version }}" `
+          @devicePackages
+
     - name: Initialize ROCm devel tree
       shell: pwsh
       run: |
         python -m rocm_sdk init --quiet
-        python -m rocm_sdk path --root
+        $develRoot = python -m rocm_sdk path --root
+        Write-Host "ROCm devel root: $develRoot"
+        $rocrand = Join-Path $develRoot 'bin/rocrand.dll'
+        if (-not (Test-Path $rocrand)) {
+          throw "rocrand.dll missing after rocm_sdk init: $rocrand"
+        }
+        Write-Host "OK rocrand.dll present at $rocrand"
 
     - name: Save pip toolchain cache
       if: steps.pip-toolchain-cache.outputs.cache-hit != 'true'
