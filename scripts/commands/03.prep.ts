@@ -36,8 +36,42 @@ export function runPrep(options: { ptSrc: string }): void {
     "origin",
     pytorchBuildCommit,
   ]);
-  run("git", ["-C", root, "checkout", "FETCH_HEAD"]);
+  run("git", ["-C", root, "config", "core.longpaths", "true"]);
   run("git", [
+    "-c",
+    "core.longpaths=true",
+    "-C",
+    root,
+    "checkout",
+    "FETCH_HEAD",
+  ]);
+
+  const submodulePaths = [
+    "third_party/composable_kernel",
+    "third_party/flash-attention",
+    "third_party/fbgemm",
+    "third_party/gloo",
+    "third_party/tensorpipe",
+    "third_party/kineto",
+    "third_party/onnx",
+    "third_party/pocketfft",
+    "third_party/pybind11",
+  ];
+  run("git", [
+    "-c",
+    "core.longpaths=true",
+    "-C",
+    root,
+    "submodule",
+    "update",
+    "--init",
+    "--depth",
+    "1",
+    ...submodulePaths,
+  ]);
+  run("git", [
+    "-c",
+    "core.longpaths=true",
     "-C",
     root,
     "submodule",
@@ -46,16 +80,7 @@ export function runPrep(options: { ptSrc: string }): void {
     "--recursive",
     "--depth",
     "1",
-    "third_party/composable_kernel",
-    "third_party/flash-attention",
-    "third_party/fbgemm",
     "third_party/ideep",
-    "third_party/gloo",
-    "third_party/tensorpipe",
-    "third_party/kineto",
-    "third_party/onnx",
-    "third_party/pocketfft",
-    "third_party/pybind11",
   ]);
 
   const gitAuthorDate = runCapture("git", [

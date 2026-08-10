@@ -32,6 +32,7 @@ runs:
       if: inputs.prep-source == 'true'
       shell: pwsh
       run: |
+        git config --global core.longpaths true
         npx tsx scripts/cli.ts 03.prep --pt-src $env:PT_SRC
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         npx tsx scripts/cli.ts 04.patch --pt-src $env:PT_SRC
