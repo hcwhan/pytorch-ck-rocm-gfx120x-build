@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import { formatCkTargetsFlag } from "./gpu-archs.js";
 import { buildPipToolchainCacheKey } from "./pip-cache-key.js";
 
 const gitShaSchema = z
@@ -39,6 +40,7 @@ export type VersionLockVars = {
   ROCM_VERSION: string;
   PIP_TOOLCHAIN_CACHE_KEY: string;
   GPU_ARCHS: string;
+  CK_TARGETS: string;
   CK_OPT_DIM: string;
   PYTORCH_REPO: string;
   PYTORCH_BUILD_COMMIT: string;
@@ -133,6 +135,7 @@ export function readVersionLock(workspaceRoot: string): VersionLockVars {
       rocmIndex: lock.toolchain.rocm_index,
     }),
     GPU_ARCHS: lock.compile.gpu_archs,
+    CK_TARGETS: formatCkTargetsFlag(lock.compile.gpu_archs),
     CK_OPT_DIM: lock.compile.ck_opt_dim,
     PYTORCH_REPO: lock.pytorch.repo,
     PYTORCH_BUILD_COMMIT: lock.pytorch.build_commit,
@@ -149,7 +152,7 @@ export function readVersionLock(workspaceRoot: string): VersionLockVars {
   };
 
   console.log(
-    `VERSION.lock: python=${vars.PYTHON_VERSION} rocm=${vars.ROCM_VERSION} gpu=${vars.GPU_ARCHS} ck_opt_dim=${vars.CK_OPT_DIM}`,
+    `VERSION.lock: python=${vars.PYTHON_VERSION} rocm=${vars.ROCM_VERSION} gpu=${vars.GPU_ARCHS} ck_targets=${vars.CK_TARGETS} ck_opt_dim=${vars.CK_OPT_DIM}`,
   );
 
   return vars;

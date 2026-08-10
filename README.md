@@ -23,13 +23,13 @@
 |------|------|------|
 | `toolchain` | `python`、`rocm_index`、`rocm` | pip 工具链 pin（**不安装预编译 torch**） |
 | `pytorch` | `repo`、`build_commit`、`build_commit_date` | 每次构建精确 clone 的 PyTorch 源码；**升级 PyTorch 时改 `build_commit` 与 `build_commit_date`** |
-| `compile` | `gpu_archs`、`ck_opt_dim` | `PYTORCH_ROCM_ARCH` 与 CK FMHA codegen 档位（**唯一架构源**） |
+| `compile` | `gpu_archs`、`ck_opt_dim` | `PYTORCH_ROCM_ARCH`（**唯一架构源**）与 CK FMHA `opt_dim` 档位 |
 | `wheel` | `wheel_local_version` | wheel 的 `+local` 标签（env `WHEEL_LOCAL_VERSION`） |
 | `wheel` | `wheel_artifact_name` | GitHub Actions artifact 名称 |
 | `release` | `release_tag_prefix` | Release tag 前缀（`{prefix}-serial-build{run_number}`） |
 | `release` | `release_title_prefix` | Release 标题前缀（env `RELEASE_TITLE_PREFIX`） |
 
-`EXPECTED_WHEEL_PATTERN` 由 `wheel.wheel_local_version` + `toolchain.python` 在 `version-lock.ts` 推导，不在 lock 中存储。
+`EXPECTED_WHEEL_PATTERN`、`CK_TARGETS` 由 `version-lock.ts` / `gpu-archs.ts` 从 lock 推导，不在 lock 中存储（如 `gfx1200;gfx1201` → `CK_TARGETS=--targets gfx12`）。
 
 规则：CI 始终 clone **`pytorch.build_commit`**（`fetch` + `checkout FETCH_HEAD`），再经 `04.patch` 启用 Windows CK SDPA；patch 内 runtime arch 列表与 `compile.gpu_archs` 同源。
 
@@ -45,6 +45,7 @@
 - **全量 PyTorch 源码编译**（`setup.py build` → `bdist_wheel`）
 - **USE_ROCM_CK_SDPA=ON**（Windows + gfx120x 补丁）
 - **`PYTORCH_ROCM_ARCH`** = lock `compile.gpu_archs`（Windows 分号分隔）
+- **`CK_TARGETS`** = 由 `compile.gpu_archs` 推导（当前 `gfx1200;gfx1201` → `--targets gfx12`）
 - CK FMHA **`ck_opt_dim`** = lock `compile.ck_opt_dim`（当前 `32,64,128,256`）
 - wheel local tag：`rocm7.14.0.ck.gfx120x`（见 `wheel.wheel_local_version`）
 

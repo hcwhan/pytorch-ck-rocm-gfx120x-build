@@ -57,7 +57,7 @@ function applyPoints(filePath: string, points: PatchPoint[]): void {
 
 export function runPatch(options: { ptSrc: string }): void {
   const root = path.resolve(options.ptSrc);
-  const ckTargets = "--targets gfx9,gfx950,gfx12";
+  const ckTargets = requireLockEnv("CK_TARGETS");
   const ckOptDim = requireLockEnv("CK_OPT_DIM");
   const gpuArchList = parseGpuArchList(requireLockEnv("GPU_ARCHS"));
   const gpuArchCpp = formatGpuArchCppStrings(gpuArchList);
@@ -149,6 +149,6 @@ export function runPatch(options: { ptSrc: string }): void {
   ]);
 
   console.log(
-    `Patched pytorch source at ${root} for gfx120x CK SDPA (GPU_ARCHS=${gpuArchCmake})`,
+    `Patched pytorch source at ${root} for gfx120x CK SDPA (GPU_ARCHS=${gpuArchCmake}, CK_TARGETS=${ckTargets})`,
   );
 }

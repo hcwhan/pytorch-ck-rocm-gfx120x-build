@@ -23,13 +23,13 @@ Toolchain versions are pinned in **`VERSION.lock.json`** and loaded via `npx tsx
 |---------|-------|------|
 | `toolchain` | `python`, `rocm_index`, `rocm` | pip toolchain pins (**no prebuilt torch install**) |
 | `pytorch` | `repo`, `build_commit`, `build_commit_date` | Exact PyTorch source cloned each build; **bump `build_commit` and `build_commit_date` when upgrading PyTorch** |
-| `compile` | `gpu_archs`, `ck_opt_dim` | `PYTORCH_ROCM_ARCH` and CK FMHA codegen tiers (**single arch source**) |
+| `compile` | `gpu_archs`, `ck_opt_dim` | `PYTORCH_ROCM_ARCH` (**single arch source**) and CK FMHA `opt_dim` tiers |
 | `wheel` | `wheel_local_version` | Wheel `+local` tag (env `WHEEL_LOCAL_VERSION`) |
 | `wheel` | `wheel_artifact_name` | GitHub Actions artifact name |
 | `release` | `release_tag_prefix` | Release tag prefix (`{prefix}-serial-build{run_number}`) |
 | `release` | `release_title_prefix` | Release title prefix (env `RELEASE_TITLE_PREFIX`) |
 
-`EXPECTED_WHEEL_PATTERN` is derived in `version-lock.ts` from `wheel.wheel_local_version` + `toolchain.python`, not stored in the lock file.
+`EXPECTED_WHEEL_PATTERN` and `CK_TARGETS` are derived from the lock in `version-lock.ts` / `gpu-archs.ts`, not stored in the lock file (e.g. `gfx1200;gfx1201` → `CK_TARGETS=--targets gfx12`).
 
 Prep clones **`pytorch.build_commit`** (`fetch` + `checkout FETCH_HEAD`), then `04.patch` enables Windows CK SDPA; runtime arch lists in the patch follow lock `compile.gpu_archs`.
 
@@ -45,6 +45,7 @@ Prep clones **`pytorch.build_commit`** (`fetch` + `checkout FETCH_HEAD`), then `
 - **Full PyTorch source build** (`setup.py build` → `bdist_wheel`)
 - **USE_ROCM_CK_SDPA=ON** (Windows + gfx120x patches)
 - **`PYTORCH_ROCM_ARCH`** = lock `compile.gpu_archs` (semicolon-separated on Windows)
+- **`CK_TARGETS`** = derived from `compile.gpu_archs` (currently `gfx1200;gfx1201` → `--targets gfx12`)
 - CK FMHA **`ck_opt_dim`** = lock `compile.ck_opt_dim` (currently `32,64,128,256`)
 - Wheel local tag: `rocm7.14.0.ck.gfx120x` (see `wheel.wheel_local_version`)
 

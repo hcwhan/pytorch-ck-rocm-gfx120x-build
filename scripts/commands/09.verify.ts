@@ -139,6 +139,7 @@ export function runVerify(options: {
 }): void {
   const expectedWheelPattern = requireLockEnv("EXPECTED_WHEEL_PATTERN");
   const ckOptDim = requireLockEnv("CK_OPT_DIM");
+  const ckTargets = requireLockEnv("CK_TARGETS");
   const pytorchBuildCommit = requireLockEnv("PYTORCH_BUILD_COMMIT");
   const wheelLocalVersion = requireLockEnv("WHEEL_LOCAL_VERSION");
   const rocmVersion = requireLockEnv("ROCM_VERSION");
@@ -206,6 +207,7 @@ export function runVerify(options: {
     python: pythonVersion,
     rocm: rocmVersion,
     gpu_archs: gpuArchs,
+    ck_targets: ckTargets,
     ck_opt_dim: ckOptDim,
     wheel_local_version: wheelLocalVersion,
     source_date_epoch: Number(sourceDateEpoch),
