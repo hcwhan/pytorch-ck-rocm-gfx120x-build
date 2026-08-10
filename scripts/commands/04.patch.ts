@@ -139,6 +139,13 @@ export function runPatch(options: { ptSrc: string }): void {
   const ckCmake = path.join(ckDir, "CMakeLists.txt");
   applyPoints(ckCmake, [
     {
+      name: "ck-fmha-generate-python3-executable",
+      before: `set(CK_FMHA_GENERATE python3 \${CMAKE_CURRENT_LIST_DIR}/generate_compat.py
+    \${CMAKE_SOURCE_DIR}/third_party/composable_kernel/example/ck_tile/01_fmha/generate.py)`,
+      after: `set(CK_FMHA_GENERATE \${Python3_EXECUTABLE} \${CMAKE_CURRENT_LIST_DIR}/generate_compat.py
+    \${CMAKE_SOURCE_DIR}/third_party/composable_kernel/example/ck_tile/01_fmha/generate.py)`,
+    },
+    {
       name: "ck-codegen-list-optdim",
       before: `COMMAND \${CK_FMHA_GENERATE} --optdim=${ckOptDim}`,
       after: `COMMAND \${CK_FMHA_GENERATE} ${ckTargets} --optdim=${ckOptDim}`,
@@ -251,6 +258,23 @@ endif()`,
       after: `execute_process(
  COMMAND \${Python3_EXECUTABLE} \${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.py \${CMAKE_CURRENT_LIST_DIR}/bwd_blob_list.txt
  RESULT_VARIABLE ret)`,
+    },
+    {
+      name: "ck-rename-cpp-to-hip-cmake",
+      before: `# Change file extensions to .hip
+execute_process(COMMAND bash -c "for file in \${CMAKE_CURRENT_LIST_DIR}/*.cpp; do mv -- \\"$file\\" \\"\\$\{file%.cpp}.hip\\"; done"
+  RESULT_VARIABLE ret
+)
+
+if(ret AND NOT ret EQUAL 0)
+  message( FATAL_ERROR "CK Tile FMHA FAILED to change the generated instances extensions from .cpp to .hpp")
+endif()`,
+      after: `# Change file extensions to .hip
+file(GLOB _ck_fmha_cpp_files "\${CMAKE_CURRENT_LIST_DIR}/*.cpp")
+foreach(_ck_fmha_cpp \${_ck_fmha_cpp_files})
+ get_filename_component(_ck_fmha_base \${_ck_fmha_cpp} NAME_WE)
+ file(RENAME \${_ck_fmha_cpp} "\${CMAKE_CURRENT_LIST_DIR}/\${_ck_fmha_base}.hip")
+endforeach()`,
     },
   ]);
 

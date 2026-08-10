@@ -25,6 +25,7 @@ export function initBuildEnv(options: {
 
   process.env.MAX_JOBS = String(maxJobs);
   process.env.USE_ROCM = "1";
+  process.env.USE_KINETO = "0";
   process.env.USE_ROCM_CK_SDPA = "1";
   process.env.PYTORCH_ROCM_ARCH = gpuArchs;
   process.env.DISTUTILS_USE_SDK = "1";
@@ -36,7 +37,7 @@ export function initBuildEnv(options: {
   process.env.TORCH_CUDA_ARCH_LIST = "";
   process.env.CMAKE_BUILD_TYPE = "Release";
   process.env.CMAKE_ARGS =
-    "-DUSE_ROCM_CK_SDPA=ON -DUSE_ROCM_CK_GEMM=OFF -DBUILD_TEST=OFF";
+    "-DUSE_ROCM_CK_SDPA=ON -DUSE_ROCM_CK_GEMM=OFF -DBUILD_TEST=OFF -DUSE_KINETO=OFF";
 
   const versionFile = path.join(ptSrc, "version.txt");
   const baseVersion = readFileSync(versionFile, "utf8").trim();

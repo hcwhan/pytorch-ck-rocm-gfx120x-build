@@ -38,10 +38,10 @@
 | `scripts/lib/gpu-archs.ts` | 解析 lock `GPU_ARCHS`；由 `gpu_archs` 推导 `CK_TARGETS`（HIP → CK 族映射）供 patch |
 | `scripts/lib/require-env.ts` | CI env 读取；缺 env 直接 throw |
 | `scripts/lib/rocm-sdk-paths.ts` | ROCm SDK 路径（唯一路径发现） |
-| `scripts/lib/init-build-env.ts` | ROCm 编译 env；`installRequirements` 默认 true（仅 `06.build`） |
+| `scripts/lib/init-build-env.ts` | ROCm 编译 env（含 `USE_KINETO=0`；Windows 无 rocprofiler）；`installRequirements` 默认 true（仅 `06.build`） |
 | `01.config` | 读 lock；`--export-github-env` 写 CI env |
 | `03.prep` | clone PyTorch + 浅 submodule |
-| `04.patch` | Windows CK SDPA + gfx120x 程序化补丁 + MSVC `/Brepro`；部署 `add_make_kernel_pt.py`（替代 bash）+ CK emit `RESULT_VARIABLE` |
+| `04.patch` | Windows CK SDPA + gfx120x 程序化补丁 + MSVC `/Brepro`；`CK_FMHA_GENERATE` 用 `${Python3_EXECUTABLE}`；部署 `add_make_kernel_pt.py`（替代 bash）+ `.cpp→.hip` CMake `file(RENAME)` + CK emit 独立 `RESULT_VARIABLE` |
 | `04.hipify` | `tools/amd_build/build_amd.py`（生成 `c10/hip/`、`THH/` 等 ROCm 源码） |
 | `05.toolchain-fingerprint` | MSVC/clang + pip 指纹；`-w` 输出 `cache-key` |
 | `06.build` | `setup.py build`（`initBuildEnv` 含 requirements 安装） |
