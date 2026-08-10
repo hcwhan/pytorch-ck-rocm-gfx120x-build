@@ -18,6 +18,7 @@
 | lock GPU 架构 | `GPU_ARCHS` | lock `compile.gpu_archs`（**唯一架构源**）；`PYTORCH_ROCM_ARCH` / patch runtime arch 列表同源 |
 | lock CK codegen 目标 | `CK_TARGETS` | 由 `compile.gpu_archs` 经 `gpu-archs.ts` 推导（如 `gfx1200;gfx1201` → `--targets gfx12`）；`04.patch` 只读 env |
 | lock CK OPT_DIM | `CK_OPT_DIM` | lock `compile.ck_opt_dim` 逗号列表；`04.patch` 只读 env |
+| lock CK bwd | `CK_FMHA_DISABLE_BWD` | lock `compile.ck_disable_bwd`（`true` = 推理专用，跳过 bwd codegen / fav_v3 / `FLASHATTENTION_DISABLE_BACKWARD`） |
 | Ninja cache key | `cache-key` | 05.toolchain-fingerprint output → A03.pt-build-with-cache input |
 | Compile cache metadata | `--build-caches` | workflow 写入 `dist/build-caches.json` → 09.verify → manifest `build_caches` |
 | wheel local tag | `WHEEL_LOCAL_VERSION` | lock `wheel.wheel_local_version` |
@@ -25,7 +26,7 @@
 
 **缩写对照：** 仓库 `pytorch-ck-rocm-gfx120x-build`；cache/release 前缀 `torch-ck-gfx120x`；wheel artifact 见 lock `wheel_artifact_name`。
 
-**lock → GITHUB_ENV 映射：** `toolchain.python`→`PYTHON_VERSION`，`toolchain.rocm`→`ROCM_VERSION`，`toolchain.rocm_index`→`ROCM_INDEX`，`compile.gpu_archs`→`GPU_ARCHS`，`compile.gpu_archs`→`CK_TARGETS`（推导），`compile.ck_opt_dim`→`CK_OPT_DIM`，`pytorch.repo`→`PYTORCH_REPO`，`pytorch.build_commit`→`PYTORCH_BUILD_COMMIT`，`pytorch.build_commit_date`→`PYTORCH_BUILD_COMMIT_DATE`（另导出 `SOURCE_DATE_EPOCH`），`wheel.wheel_local_version`→`WHEEL_LOCAL_VERSION`，`wheel.wheel_artifact_name`→`WHEEL_ARTIFACT_NAME`，`release.release_tag_prefix`→`RELEASE_TAG_PREFIX`，`release.release_title_prefix`→`RELEASE_TITLE_PREFIX`；`EXPECTED_WHEEL_PATTERN` / `PIP_TOOLCHAIN_CACHE_KEY` 由 `version-lock.ts` 推导。
+**lock → GITHUB_ENV 映射：** `toolchain.python`→`PYTHON_VERSION`，`toolchain.rocm`→`ROCM_VERSION`，`toolchain.rocm_index`→`ROCM_INDEX`，`compile.gpu_archs`→`GPU_ARCHS`，`compile.gpu_archs`→`CK_TARGETS`（推导），`compile.ck_opt_dim`→`CK_OPT_DIM`，`compile.ck_disable_bwd`→`CK_FMHA_DISABLE_BWD`，`pytorch.repo`→`PYTORCH_REPO`，`pytorch.build_commit`→`PYTORCH_BUILD_COMMIT`，`pytorch.build_commit_date`→`PYTORCH_BUILD_COMMIT_DATE`（另导出 `SOURCE_DATE_EPOCH`），`wheel.wheel_local_version`→`WHEEL_LOCAL_VERSION`，`wheel.wheel_artifact_name`→`WHEEL_ARTIFACT_NAME`，`release.release_tag_prefix`→`RELEASE_TAG_PREFIX`，`release.release_title_prefix`→`RELEASE_TITLE_PREFIX`；`EXPECTED_WHEEL_PATTERN` / `PIP_TOOLCHAIN_CACHE_KEY` 由 `version-lock.ts` 推导。
 
 ## 复用入口
 
@@ -41,18 +42,18 @@
 | `scripts/lib/init-build-env.ts` | ROCm 编译 env（含 `USE_KINETO=0`；Windows 无 rocprofiler）；`installRequirements` 默认 true（仅 `06.build`） |
 | `01.config` | 读 lock；`--export-github-env` 写 CI env |
 | `03.prep` | clone PyTorch + 浅 submodule |
-| `04.patch` | Windows CK SDPA + gfx120x 程序化补丁 + MSVC `/Brepro`；`CK_FMHA_GENERATE` 用 `${Python3_EXECUTABLE}`；部署 `add_make_kernel_pt.py`（替代 bash）+ `.cpp→.hip` CMake `file(RENAME)` + CK emit 独立 `RESULT_VARIABLE` |
+| `04.patch` | Windows CK SDPA + gfx120x 程序化补丁 + MSVC `/Brepro`；`CK_FMHA_DISABLE_BWD=1` 时省略 bwd codegen/fav_v3、GLOB 排除 `fmha_bwd` blob、**就地 patch** upstream `mha_bwd_ck.hip` / `mha_varlen_bwd_ck.hip` / `me_bwd_ck.hip`（`#if 0` 保留 upstream 签名锚点）并设 `FLASHATTENTION_DISABLE_BACKWARD`；否则完整 bwd；`CK_FMHA_GENERATE` 用 `${Python3_EXECUTABLE}`；部署 `add_make_kernel_pt.py` + `.cpp→.hip` CMake `file(RENAME)` + CK emit 独立 `RESULT_VARIABLE` |
 | `04.hipify` | `tools/amd_build/build_amd.py`（生成 `c10/hip/`、`THH/` 等 ROCm 源码） |
 | `05.toolchain-fingerprint` | MSVC/clang + pip 指纹；`-w` 输出 `cache-key` |
 | `06.build` | `setup.py build`（`initBuildEnv` 含 requirements 安装） |
 | `08.wheel` | `setup.py bdist_wheel` → 复制到 `dist/`（env 重设，不重复 pip install） |
-| `09.verify` | CPU smoke（wheel CK dim 符号 + `is_ck_sdpa_available()`） |
+| `09.verify` | CPU smoke（wheel CK fwd dim 符号 + bwd-off 负向断言 + `is_ck_sdpa_available()`）；manifest 含 `ck_disable_bwd` |
 | `10.publish` | Release 元数据 |
 | `build/build-pytorch-steps.py` | `--step build` / `--step wheel` |
 | `build/add-make-kernel-pt.py` | CK FMHA blob `make_kernel`→`make_kernel_pt`（`04.patch` 复制到 PT 源码 `ck/`） |
 | `test/gpu-smoke-test.py` | 部署前 GPU 校验（gfx120x 真机；CI 不跑） |
 
-规则：lock 只经 `01.config` 读一次；同 job 其余命令只经 `requireLockEnv` 消费 env；`GPU_ARCHS` / `CK_TARGETS` / `CK_OPT_DIM` **禁止**在 patch 内硬编码。ROCm 路径只经 `rocm-sdk-paths.ts`；编译/打 wheel 只经 `build-pytorch-steps.py`。**A01 不安装预编译 torch**（全量源码编译）。
+规则：lock 只经 `01.config` 读一次；同 job 其余命令只经 `requireLockEnv` 消费 env；`GPU_ARCHS` / `CK_TARGETS` / `CK_OPT_DIM` / `CK_FMHA_DISABLE_BWD` **禁止**在 patch 内硬编码。ROCm 路径只经 `rocm-sdk-paths.ts`；编译/打 wheel 只经 `build-pytorch-steps.py`。**A01 不安装预编译 torch**（全量源码编译）。
 
 **依赖方向（强制）**：workflow 直接调用 `scripts/cli.ts` 与官方 action；`scripts/commands/*` 只 import `scripts/lib/*`。Python 编译逻辑只经 `build/build-pytorch-steps.py`。
 
@@ -73,8 +74,8 @@
 
 - **全量 PyTorch 源码编译**（无 parallel workflow）
 - **gfx120x 双架构 wheel**：lock `compile.gpu_archs=gfx1200;gfx1201` → `PYTORCH_ROCM_ARCH` 与 `04.patch` runtime arch 列表同源（经 `scripts/lib/gpu-archs.ts`）
-- **patch 程序化**（`04.patch.ts`）；`CK_OPT_DIM` / `GPU_ARCHS` / `CK_TARGETS` 只从 env 取（`CK_TARGETS` 由 lock `gpu_archs` 推导）
-- **upstream 含 bwd CK FMHA**；ComfyUI 推理不用 bwd，当前不裁 bwd
+- **patch 程序化**（`04.patch.ts`）；`CK_OPT_DIM` / `GPU_ARCHS` / `CK_TARGETS` / `CK_FMHA_DISABLE_BWD` 只从 env 取（`CK_TARGETS` 由 lock `gpu_archs` 推导）
+- **ComfyUI 推理 wheel 默认 `compile.ck_disable_bwd=true`**（fwd-only CK FMHA；调用 backward 运行时 `TORCH_CHECK`）
 - **`/Brepro` + `SOURCE_DATE_EPOCH`**：固定 PE TimeDateStamp 与 wheel zip 时间戳
 - **`ninja_workers` 默认 4**；**`skip_cache_restore` 默认 false**
 - smoke test 在 CPU runner 上验证 wheel CK dim 符号 + `is_ck_sdpa_available()`（不跑 GPU kernel）

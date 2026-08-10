@@ -23,6 +23,7 @@ const versionLockSchema = z.object({
   compile: z.object({
     gpu_archs: z.string().min(1),
     ck_opt_dim: z.string().min(1),
+    ck_disable_bwd: z.boolean(),
   }),
   wheel: z.object({
     wheel_local_version: z.string().min(1),
@@ -42,6 +43,7 @@ export type VersionLockVars = {
   GPU_ARCHS: string;
   CK_TARGETS: string;
   CK_OPT_DIM: string;
+  CK_FMHA_DISABLE_BWD: string;
   PYTORCH_REPO: string;
   PYTORCH_BUILD_COMMIT: string;
   PYTORCH_BUILD_COMMIT_DATE: string;
@@ -137,6 +139,7 @@ export function readVersionLock(workspaceRoot: string): VersionLockVars {
     GPU_ARCHS: lock.compile.gpu_archs,
     CK_TARGETS: formatCkTargetsFlag(lock.compile.gpu_archs),
     CK_OPT_DIM: lock.compile.ck_opt_dim,
+    CK_FMHA_DISABLE_BWD: lock.compile.ck_disable_bwd ? "1" : "0",
     PYTORCH_REPO: lock.pytorch.repo,
     PYTORCH_BUILD_COMMIT: lock.pytorch.build_commit,
     PYTORCH_BUILD_COMMIT_DATE: isoUtc,
@@ -152,7 +155,7 @@ export function readVersionLock(workspaceRoot: string): VersionLockVars {
   };
 
   console.log(
-    `VERSION.lock: python=${vars.PYTHON_VERSION} rocm=${vars.ROCM_VERSION} gpu=${vars.GPU_ARCHS} ck_targets=${vars.CK_TARGETS} ck_opt_dim=${vars.CK_OPT_DIM}`,
+    `VERSION.lock: python=${vars.PYTHON_VERSION} rocm=${vars.ROCM_VERSION} gpu=${vars.GPU_ARCHS} ck_targets=${vars.CK_TARGETS} ck_opt_dim=${vars.CK_OPT_DIM} ck_disable_bwd=${vars.CK_FMHA_DISABLE_BWD}`,
   );
 
   return vars;
