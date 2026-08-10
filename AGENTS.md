@@ -6,7 +6,7 @@
 
 | Workflow | 链路 |
 |----------|------|
-| **serial** | clone+patch → `setup.py build`（ninja cache）→ `bdist_wheel` → CPU smoke test |
+| **serial** | clone+patch+hipify → `setup.py build`（ninja cache）→ `bdist_wheel` → CPU smoke test |
 
 手动 `workflow_dispatch`；setuptools 同进程入口：`build/build-pytorch-steps.py`。Cache 前缀：`torch-ck-gfx120x-serial-v2-{lockHash8}`（`lockHash8` = `VERSION.lock.json` SHA256 前 8 位；精确 key，无 `restore-keys`；key 含 `msvc` + `rocmClang` + `pipToolchain` 三段指纹）。
 
@@ -41,6 +41,7 @@
 | `01.config` | 读 lock；`--export-github-env` 写 CI env |
 | `03.prep` | clone PyTorch + 浅 submodule |
 | `04.patch` | Windows CK SDPA + gfx120x 程序化补丁 + MSVC `/Brepro` |
+| `04.hipify` | `tools/amd_build/build_amd.py`（生成 `c10/hip/`、`THH/` 等 ROCm 源码） |
 | `05.toolchain-fingerprint` | MSVC/clang + pip 指纹；`-w` 输出 `cache-key` |
 | `06.build` | `setup.py build`（`initBuildEnv` 含 requirements 安装） |
 | `08.wheel` | `setup.py bdist_wheel` → 复制到 `dist/`（env 重设，不重复 pip install） |
@@ -57,7 +58,7 @@
 
 | Action | 用途 |
 |--------|------|
-| `A00.pt-job-bootstrap` | Node/npm + `01.config` + prep/patch + A01 toolchain |
+| `A00.pt-job-bootstrap` | Node/npm + `01.config` + prep/patch/hipify + A01 toolchain |
 | `A01.pt-rocm-toolchain` | Python / MSVC / rocm[devel]（pip toolchain cache） |
 | `A02.pt-ninja-cache-restore` | 恢复 ninja 增量缓存 |
 | `A03.pt-build-with-cache` | A02 + 编译 + A04 |

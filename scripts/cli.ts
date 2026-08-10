@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { runConfig } from "./commands/01.config.js";
 import { runPrep } from "./commands/03.prep.js";
 import { runPatch } from "./commands/04.patch.js";
+import { runHipify } from "./commands/04.hipify.js";
 import { runToolchainFingerprint } from "./commands/05.toolchain-fingerprint.js";
 import { runBuild } from "./commands/06.build.js";
 import { runWheel } from "./commands/08.wheel.js";
@@ -39,6 +40,14 @@ program
   .requiredOption("--pt-src <path>")
   .action((opts) => {
     runPatch({ ptSrc: opts.ptSrc });
+  });
+
+program
+  .command("04.hipify")
+  .description("Run build_amd.py (CUDA -> HIP source generation)")
+  .requiredOption("--pt-src <path>")
+  .action((opts) => {
+    runHipify({ ptSrc: opts.ptSrc });
   });
 
 program

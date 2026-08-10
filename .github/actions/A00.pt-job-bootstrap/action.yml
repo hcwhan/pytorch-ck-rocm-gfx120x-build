@@ -28,7 +28,7 @@ runs:
       shell: pwsh
       run: npx tsx scripts/cli.ts 01.config -w $env:GITHUB_WORKSPACE --export-github-env
 
-    - name: Clone and patch pytorch source
+    - name: Clone, patch, and hipify pytorch source
       if: inputs.prep-source == 'true'
       shell: pwsh
       run: |
@@ -36,6 +36,8 @@ runs:
         npx tsx scripts/cli.ts 03.prep --pt-src $env:PT_SRC
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         npx tsx scripts/cli.ts 04.patch --pt-src $env:PT_SRC
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        npx tsx scripts/cli.ts 04.hipify --pt-src $env:PT_SRC
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Setup ROCm toolchain
