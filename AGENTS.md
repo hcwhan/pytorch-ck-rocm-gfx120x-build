@@ -41,7 +41,7 @@
 | `scripts/lib/init-build-env.ts` | ROCm 编译 env；`installRequirements` 默认 true（仅 `06.build`） |
 | `01.config` | 读 lock；`--export-github-env` 写 CI env |
 | `03.prep` | clone PyTorch + 浅 submodule |
-| `04.patch` | Windows CK SDPA + gfx120x 程序化补丁 + MSVC `/Brepro` |
+| `04.patch` | Windows CK SDPA + gfx120x 程序化补丁 + MSVC `/Brepro`；部署 `add_make_kernel_pt.py`（替代 bash）+ CK emit `RESULT_VARIABLE` |
 | `04.hipify` | `tools/amd_build/build_amd.py`（生成 `c10/hip/`、`THH/` 等 ROCm 源码） |
 | `05.toolchain-fingerprint` | MSVC/clang + pip 指纹；`-w` 输出 `cache-key` |
 | `06.build` | `setup.py build`（`initBuildEnv` 含 requirements 安装） |
@@ -49,6 +49,7 @@
 | `09.verify` | CPU smoke（wheel CK dim 符号 + `is_ck_sdpa_available()`） |
 | `10.publish` | Release 元数据 |
 | `build/build-pytorch-steps.py` | `--step build` / `--step wheel` |
+| `build/add-make-kernel-pt.py` | CK FMHA blob `make_kernel`→`make_kernel_pt`（`04.patch` 复制到 PT 源码 `ck/`） |
 | `test/gpu-smoke-test.py` | 部署前 GPU 校验（gfx120x 真机；CI 不跑） |
 
 规则：lock 只经 `01.config` 读一次；同 job 其余命令只经 `requireLockEnv` 消费 env；`GPU_ARCHS` / `CK_TARGETS` / `CK_OPT_DIM` **禁止**在 patch 内硬编码。ROCm 路径只经 `rocm-sdk-paths.ts`；编译/打 wheel 只经 `build-pytorch-steps.py`。**A01 不安装预编译 torch**（全量源码编译）。
