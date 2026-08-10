@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { run } from "./exec.js";
 import { requireMaxJobs } from "./max-jobs.js";
@@ -36,7 +37,14 @@ export function initBuildEnv(options: {
   process.env.CMAKE_BUILD_TYPE = "Release";
   process.env.CMAKE_ARGS =
     "-DUSE_ROCM_CK_SDPA=ON -DUSE_ROCM_CK_GEMM=OFF -DBUILD_TEST=OFF";
-  process.env.PYTORCH_BUILD_VERSION = wheelLocalVersion;
+
+  const versionFile = path.join(ptSrc, "version.txt");
+  const baseVersion = readFileSync(versionFile, "utf8").trim();
+  if (!baseVersion) {
+    throw new Error(`PyTorch base version missing in ${versionFile}`);
+  }
+  process.env.PYTORCH_BUILD_VERSION = `${baseVersion}+${wheelLocalVersion}`;
+  process.env.PYTORCH_BUILD_NUMBER = "1";
 
   process.env.ROCM_HOME = develRoot;
   process.env.ROCM_PATH = develRoot;
@@ -56,6 +64,7 @@ export function initBuildEnv(options: {
 
   console.log(`MAX_JOBS=${maxJobs}`);
   console.log(`PYTORCH_ROCM_ARCH=${process.env.PYTORCH_ROCM_ARCH}`);
+  console.log(`PYTORCH_BUILD_VERSION=${process.env.PYTORCH_BUILD_VERSION}`);
   console.log(`CMAKE_ARGS=${process.env.CMAKE_ARGS}`);
 
   if (options.installRequirements !== false) {
