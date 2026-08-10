@@ -515,11 +515,23 @@ export function runPatch(options: { ptSrc: string }): void {
         'cmake_dependent_option(USE_ROCM_CK_SDPA "Use ROCm Composable Kernel for SDPA" ON "USE_ROCM" OFF)',
     },
     {
-      name: "msvc-link-brepro",
-      before:
-        ' string(APPEND ${flag_var} " /ignore:4049 /ignore:4217 /ignore:4099")',
-      after:
-        ' string(APPEND ${flag_var} " /ignore:4049 /ignore:4217 /ignore:4099 /Brepro")',
+      name: "msvc-link-brepro-exe-shared-only",
+      before: `  foreach(flag_var CMAKE_SHARED_LINKER_FLAGS CMAKE_STATIC_LINKER_FLAGS
+                   CMAKE_EXE_LINKER_FLAGS CMAKE_MODULE_LINKER_FLAGS)
+    string(APPEND \${flag_var} " /ignore:4049 /ignore:4217 /ignore:4099")
+  endforeach(flag_var)
+
+  foreach(flag_var CMAKE_SHARED_LINKER_FLAGS)`,
+      after: `  foreach(flag_var CMAKE_SHARED_LINKER_FLAGS CMAKE_STATIC_LINKER_FLAGS
+                   CMAKE_EXE_LINKER_FLAGS CMAKE_MODULE_LINKER_FLAGS)
+    string(APPEND \${flag_var} " /ignore:4049 /ignore:4217 /ignore:4099")
+  endforeach(flag_var)
+
+  foreach(flag_var CMAKE_SHARED_LINKER_FLAGS CMAKE_EXE_LINKER_FLAGS)
+    string(APPEND \${flag_var} " /Brepro")
+  endforeach(flag_var)
+
+  foreach(flag_var CMAKE_SHARED_LINKER_FLAGS)`,
     },
   ]);
 
