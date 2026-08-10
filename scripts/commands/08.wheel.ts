@@ -1,4 +1,10 @@
-import { copyFileSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  statSync,
+} from "node:fs";
 import path from "node:path";
 import { run } from "../lib/exec.js";
 import { initBuildEnv } from "../lib/init-build-env.js";
@@ -23,6 +29,11 @@ export function runWheel(options: { ptSrc: string; distDir: string }): void {
   run(PYTHON, [buildScript, "--step", "wheel", "--pt-src", ptSrc, "-v"]);
 
   const wheelDir = path.join(ptSrc, "dist");
+  if (!existsSync(wheelDir)) {
+    throw new Error(
+      `Wheel output directory missing after bdist_wheel: ${wheelDir}`,
+    );
+  }
   const whls = readdirSync(wheelDir).filter((name) => name.endsWith(".whl"));
   if (whls.length !== 1) {
     throw new Error(`Expected exactly one wheel in ${wheelDir}, found ${whls.length}`);

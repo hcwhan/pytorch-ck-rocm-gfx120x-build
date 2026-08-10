@@ -1,24 +1,19 @@
-"""Build PyTorch via in-process setuptools (build / wheel)."""
+"""Build PyTorch via subprocess setuptools (build / wheel)."""
 from __future__ import annotations
 
 import argparse
-import importlib.util
-import os
+import subprocess
 import sys
 from pathlib import Path
 
 
 def _exec_setup_py(pt_src: Path, command_argv: list[str]) -> None:
-    os.chdir(pt_src)
     setup_py = pt_src / "setup.py"
-    sys.argv = [str(setup_py), *command_argv]
-    print("Running:", " ".join(sys.argv), flush=True)
-
-    spec = importlib.util.spec_from_file_location("pytorch_setup", setup_py)
-    if spec is None or spec.loader is None:
-        raise SystemExit(f"Failed to load {setup_py}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    argv = [sys.executable, str(setup_py), *command_argv]
+    print("Running:", " ".join(argv), flush=True)
+    result = subprocess.run(argv, cwd=pt_src, check=False)
+    if result.returncode != 0:
+        raise SystemExit(result.returncode)
 
 
 def build_only(pt_src: Path, *, verbose: bool = False) -> None:

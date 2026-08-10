@@ -33,7 +33,9 @@ runs:
       shell: pwsh
       run: |
         npx tsx scripts/cli.ts 03.prep --pt-src $env:PT_SRC
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         npx tsx scripts/cli.ts 04.patch --pt-src $env:PT_SRC
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Setup ROCm toolchain
       if: inputs.setup-toolchain == 'true'
