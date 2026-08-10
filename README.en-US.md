@@ -1,0 +1,133 @@
+# pytorch-ck-rocm-gfx1201-build
+
+[中文](README.md)
+
+GitHub Actions workflow to build **PyTorch** with **ROCm CK Tile SDPA** from source for **Windows / gfx1201 / Python 3.12**.
+
+Toolchain versions are pinned in **`VERSION.lock.json`** and loaded via `npx tsx scripts/cli.ts 01.config -w $env:GITHUB_WORKSPACE --export-github-env` in each workflow job.
+
+## Target
+
+| Item | Value |
+|------|-------|
+| GPU arch | `gfx1201` (RDNA4, Navi 48) |
+| OS | Windows |
+| Python | 3.12 |
+| PyTorch source | `VERSION.lock.json` **`pytorch.build_commit`** |
+| ROCm | `7.14.0` (`rocm[devel]` pip) |
+| Runner | `windows-2022` (hosted) |
+
+### `VERSION.lock.json` sections
+
+| Section | Field | Role |
+|---------|-------|------|
+| `toolchain` | `python`, `rocm_index`, `rocm` | pip toolchain pins (**no prebuilt torch install**) |
+| `pytorch` | `repo`, `build_commit`, `build_commit_date` | Exact PyTorch source cloned each build; **bump `build_commit` and `build_commit_date` when upgrading PyTorch** |
+| `compile` | `gpu_archs`, `ck_opt_dim` | `PYTORCH_ROCM_ARCH` and CK FMHA codegen tiers |
+| `wheel` | `wheel_local_version` | Wheel `+local` tag (env `WHEEL_LOCAL_VERSION`) |
+| `wheel` | `wheel_artifact_name` | GitHub Actions artifact name |
+| `release` | `release_tag_prefix` | Release tag prefix (`{prefix}-serial-build{run_number}`) |
+| `release` | `release_title_prefix` | Release title prefix (env `RELEASE_TITLE_PREFIX`) |
+
+`EXPECTED_WHEEL_PATTERN` is derived in `version-lock.ts` from `wheel.wheel_local_version` + `toolchain.python`, not stored in the lock file.
+
+Prep clones **`pytorch.build_commit`** (`fetch` + `checkout FETCH_HEAD`), then `04.patch` enables Windows CK SDPA and adds gfx1201 support.
+
+### Supported GPUs (`gfx1201`)
+
+| Category | Models |
+|----------|--------|
+| Consumer | Radeon RX 9070 XT / RX 9070 / RX 9070 GRE |
+| Professional | Radeon AI PRO R9700 / R9700S / R9600D |
+
+> **`gfx1200`** models (e.g. RX 9060 series) are out of scope for this wheel.
+
+## Build profile
+
+- **Full PyTorch source build** (`setup.py build` → `bdist_wheel`)
+- **USE_ROCM_CK_SDPA=ON** (Windows + gfx1201 patches)
+- **`PYTORCH_ROCM_ARCH=gfx1201`**
+- CK FMHA **`ck_opt_dim=32,64,128,256`**
+- Wheel local tag: `rocm7.14.0.ck.gfx1201` (see `wheel.wheel_local_version`)
+
+## Trigger
+
+| Workflow | Purpose | Trigger |
+|----------|---------|---------|
+| **Build PyTorch CK SDPA serial (Windows gfx1201)** | Single-job full compile + ninja cache + wheel | **Manual only** |
+
+Push to `main` does **not** auto-trigger builds.
+
+**Manual inputs:**
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `ninja_workers` | `4` | Ninja parallel workers (use `2` if OOM) |
+| `skip_cache_restore` | `false` | Set `true` to skip cache restore (lookup-only probe; cache still saved after compile) |
+| `publish_release` | `true` | Set `false` to skip GitHub Release upload |
+
+### Serial (`build-pytorch-ck-gfx1201-serial.yml`)
+
+| Job | Role | Timeout |
+|-----|------|---------|
+| `compile-and-wheel` | clone+patch, toolchain, ninja cache, `06.build` + `08.wheel`, CPU smoke test | 12 h |
+
+Cache keys include `VERSION.lock.json` SHA256 prefix (`torch-ck-gfx1201-serial-v1-{lockHash8}-`) and three toolchain fingerprints (MSVC toolset / ROCm clang / pip toolchain); **exact match only** (no `restore-keys`).
+
+### Build stages
+
+Single entry point for compile and wheel packaging: `build/build-pytorch-steps.py` (in-process `exec_module(setup.py)`), one of two `--step` modes:
+
+| step | Role |
+|------|------|
+| `build` | `setup.py build` (full compile) |
+| `wheel` | `setup.py bdist_wheel` (package wheel) |
+
+Serial workflow invocation: `--step build` → `--step wheel`.
+
+Env is set uniformly via `scripts/lib/init-build-env.ts` (includes `SOURCE_DATE_EPOCH` from `pytorch.build_commit_date`).
+
+## Output
+
+Artifact: **`wheel_artifact_name`** — `.whl`, `.sha256`, `wheel.manifest.json` (short-term Actions download).
+
+GitHub Release (uploaded after a successful build when `publish_release=true`):
+
+| Field | Example |
+|-------|---------|
+| Tag | `torch-ck-gfx1201-cp312-rocm7.14.0-serial-build123` |
+| Title | `PyTorch CK SDPA gfx1201 Windows 2026.08.10 19:00:00` |
+
+```powershell
+gh release list
+gh release download torch-ck-gfx1201-cp312-rocm7.14.0-serial-build123 -D .\dist
+```
+
+Expected wheel name (derived from `wheel.wheel_local_version` + `toolchain.python`):
+
+```text
+torch-*+rocm7.14.0.ck.gfx1201*-cp312-cp312-win_amd64.whl
+```
+
+## Verification
+
+| Check | Script |
+|-------|--------|
+| CI smoke test (CPU) | `npx tsx scripts/cli.ts 09.verify --dist-dir dist --build-caches dist\build-caches.json` |
+| Pre-deploy GPU smoke test (gfx1201 hardware) | `python test/gpu-smoke-test.py -w .` |
+
+Smoke test covers wheel filename/structure, pip install, and `torch.backends.cuda.is_ck_sdpa_available()`. GPU CK SDPA forward pass is in `test/gpu-smoke-test.py` (run manually on gfx1201 hardware before deploy).
+
+## ComfyUI install
+
+```powershell
+$PY = "<ComfyUI>\python_embeded\python.exe"
+& $PY -m pip install --force-reinstall .\downloaded.whl
+```
+
+After replacing the torch wheel under `python_embeded`:
+
+- Keep launch arg **`--use-pytorch-cross-attention`**
+- Set env **`TORCH_ROCM_FA_PREFER_CK=1`** (or call `torch.backends.cuda.preferred_rocm_fa_library("ck")` at runtime)
+
+See [AGENTS.md](AGENTS.md) for maintainer conventions.
