@@ -6,7 +6,10 @@ import { requireLockEnv } from "./require-env.js";
 
 const PYTHON = "python";
 
-export function initBuildEnv(options: { ptSrc: string }): void {
+export function initBuildEnv(options: {
+  ptSrc: string;
+  installRequirements?: boolean;
+}): void {
   const maxJobs = requireMaxJobs();
   const ptSrc = path.resolve(options.ptSrc);
   const gpuArchs = requireLockEnv("GPU_ARCHS");
@@ -55,11 +58,20 @@ export function initBuildEnv(options: { ptSrc: string }): void {
   console.log(`PYTORCH_ROCM_ARCH=${process.env.PYTORCH_ROCM_ARCH}`);
   console.log(`CMAKE_ARGS=${process.env.CMAKE_ARGS}`);
 
-  run(
-    PYTHON,
-    ["-m", "pip", "install", "-q", "-r", path.join(ptSrc, "requirements.txt")],
-    { quiet: true },
-  );
+  if (options.installRequirements !== false) {
+    run(
+      PYTHON,
+      [
+        "-m",
+        "pip",
+        "install",
+        "-q",
+        "-r",
+        path.join(ptSrc, "requirements.txt"),
+      ],
+      { quiet: true },
+    );
+  }
 
   console.log("Build env ready");
 }

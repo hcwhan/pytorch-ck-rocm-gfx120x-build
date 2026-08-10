@@ -25,8 +25,14 @@ import zipfile
 from pathlib import Path
 
 wheel = sys.argv[1]
-expected_local = sys.argv[2]
+ck_opt_dim = sys.argv[2]
+expected_local = sys.argv[3]
 min_pyd_bytes = 512 * 1024
+min_ck_binary_bytes = 64 * 1024
+
+opt_dims = [int(part) for part in ck_opt_dim.split(',') if part.strip()]
+if not opt_dims:
+    raise SystemExit('ERROR: CK_OPT_DIM is missing or empty')
 
 wheel_name = Path(wheel).name
 local_tag = f'+{expected_local}'
@@ -46,6 +52,35 @@ with zipfile.ZipFile(wheel) as zf:
         if info.file_size < min_pyd_bytes:
             raise SystemExit(f'ERROR: {name} too small ({info.file_size} bytes)')
         print(f'OK {name} size={info.file_size}')
+
+    ck_binaries = [
+        name for name in names
+        if name.startswith('torch/') and name.endswith(('.dll', '.pyd'))
+    ]
+    if not ck_binaries:
+        raise SystemExit('ERROR: no torch/*.dll or torch/*.pyd binaries in wheel archive')
+
+    dim_tokens = [f'_d{dim}_'.encode('ascii') for dim in opt_dims]
+    found_dims: set[int] = set()
+    scanned = 0
+    for name in ck_binaries:
+        info = zf.getinfo(name)
+        if info.file_size < min_ck_binary_bytes:
+            continue
+        data = zf.read(name)
+        scanned += 1
+        for dim, token in zip(opt_dims, dim_tokens):
+            if token in data:
+                found_dims.add(dim)
+
+    missing = [dim for dim in opt_dims if dim not in found_dims]
+    if missing:
+        raise SystemExit(
+            f'ERROR: CK FMHA OPT_DIM kernels missing in wheel binaries: {missing} '
+            f'(scanned {scanned} torch binaries)'
+        )
+    dims_str = ','.join(str(dim) for dim in opt_dims)
+    print(f'OK CK FMHA dim markers present dims={dims_str} scanned={scanned}')
 
     meta_paths = [name for name in names if name.endswith('.dist-info/METADATA')]
     if not meta_paths:
@@ -153,7 +188,13 @@ export function runVerify(options: {
   writeFileSync(checksumPath, `${sha256Hex}  ${whlName}\n`, "ascii");
 
   console.log("=== Wheel structure (pre-install) ===");
-  run(PYTHON, ["-c", WHEEL_INSPECT_CODE, whlPath, wheelLocalVersion]);
+  run(PYTHON, [
+    "-c",
+    WHEEL_INSPECT_CODE,
+    whlPath,
+    ckOptDim,
+    wheelLocalVersion,
+  ]);
 
   const whlStat = statSync(whlPath);
   const manifest = {

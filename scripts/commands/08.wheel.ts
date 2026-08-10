@@ -17,7 +17,7 @@ export function runWheel(options: { ptSrc: string; distDir: string }): void {
   }
 
   mkdirSync(distDir, { recursive: true });
-  initBuildEnv({ ptSrc });
+  initBuildEnv({ ptSrc, installRequirements: false });
 
   const buildScript = path.join(resolveBuildDir(), "build-pytorch-steps.py");
   run(PYTHON, [buildScript, "--step", "wheel", "--pt-src", ptSrc, "-v"]);

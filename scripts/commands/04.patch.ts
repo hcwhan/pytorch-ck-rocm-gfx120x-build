@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { requireLockEnv } from "../lib/require-env.js";
 
 type PatchPoint = {
   name: string;
@@ -51,7 +52,7 @@ function applyPoints(filePath: string, points: PatchPoint[]): void {
 export function runPatch(options: { ptSrc: string }): void {
   const root = path.resolve(options.ptSrc);
   const ckTargets = "--targets gfx9,gfx950,gfx12";
-  const ckOptDim = "32,64,128,256";
+  const ckOptDim = requireLockEnv("CK_OPT_DIM");
 
   applyPoints(path.join(root, "CMakeLists.txt"), [
     {
@@ -60,6 +61,13 @@ export function runPatch(options: { ptSrc: string }): void {
         'cmake_dependent_option(USE_ROCM_CK_SDPA "Use ROCm Composable Kernel for SDPA" ON "USE_ROCM;NOT WIN32" OFF)',
       after:
         'cmake_dependent_option(USE_ROCM_CK_SDPA "Use ROCm Composable Kernel for SDPA" ON "USE_ROCM" OFF)',
+    },
+    {
+      name: "msvc-link-brepro",
+      before:
+        ' string(APPEND ${flag_var} " /ignore:4049 /ignore:4217 /ignore:4099")',
+      after:
+        ' string(APPEND ${flag_var} " /ignore:4049 /ignore:4217 /ignore:4099 /Brepro")',
     },
   ]);
 
