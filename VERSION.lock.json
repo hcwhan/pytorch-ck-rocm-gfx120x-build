@@ -6,8 +6,8 @@
   },
   "pytorch": {
     "repo": "https://github.com/pytorch/pytorch.git",
-    "build_commit": "be878749ff927a9e296531e3bca080efef476e8c",
-    "build_commit_date": "2026-06-26T19:53:48Z"
+    "build_commit": "v2.13.0",
+    "build_commit_date": "2026-07-03T20:27:09Z"
   },
   "compile": {
     "gpu_archs": "gfx1200;gfx1201",
