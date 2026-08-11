@@ -10,7 +10,7 @@ export function runPrep(options: { ptSrc: string }): void {
   const root = path.resolve(options.ptSrc);
 
   console.log(`Using pytorch repo: ${pytorchRepo}`);
-  console.log(`Using pytorch build commit: ${pytorchBuildCommit}`);
+  console.log(`Using pytorch build ref: ${pytorchBuildCommit}`);
 
   const parent = path.dirname(root);
   mkdirSync(parent, { recursive: true });
@@ -59,6 +59,18 @@ export function runPrep(options: { ptSrc: string }): void {
     "1",
   ]);
 
+  const resolvedCommit = runCapture("git", [
+    "-C",
+    root,
+    "rev-parse",
+    "HEAD",
+  ]).trim();
+  if (!resolvedCommit) {
+    throw new Error(
+      `prep: failed to resolve HEAD after checkout of ${pytorchBuildCommit}`,
+    );
+  }
+
   const gitAuthorDate = runCapture("git", [
     "-C",
     root,
@@ -68,7 +80,7 @@ export function runPrep(options: { ptSrc: string }): void {
   ]).trim();
   if (!gitAuthorDate) {
     throw new Error(
-      `prep: failed to read author date for commit ${pytorchBuildCommit}`,
+      `prep: failed to read author date for ref ${pytorchBuildCommit} (${resolvedCommit})`,
     );
   }
 
@@ -82,7 +94,7 @@ export function runPrep(options: { ptSrc: string }): void {
   if (gitAuthorMs !== lockCommitMs) {
     throw new Error(
       [
-        `pytorch.build_commit_date mismatch for commit ${pytorchBuildCommit}.`,
+        `pytorch.build_commit_date mismatch for ref ${pytorchBuildCommit} (${resolvedCommit}).`,
         ` lock=${pytorchBuildCommitDate} git author=${gitAuthorDate}`,
         " Update VERSION.lock.json when bumping pytorch.build_commit.",
       ].join(""),
@@ -96,6 +108,6 @@ export function runPrep(options: { ptSrc: string }): void {
   rmSync(path.join(root, ".git"), { recursive: true, force: true });
 
   console.log(
-    `Prepared pytorch at ${root} (commit=${pytorchBuildCommit})`,
+    `Prepared pytorch at ${root} (ref=${pytorchBuildCommit}, commit=${resolvedCommit})`,
   );
 }

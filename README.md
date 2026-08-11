@@ -22,7 +22,7 @@
 | 分组 | 字段 | 作用 |
 |------|------|------|
 | `toolchain` | `python`、`rocm_index`、`rocm` | pip 工具链 pin（**不安装预编译 torch**） |
-| `pytorch` | `repo`、`build_commit`、`build_commit_date` | 每次构建精确 clone 的 PyTorch 源码；**升级 PyTorch 时改 `build_commit` 与 `build_commit_date`** |
+| `pytorch` | `repo`、`build_commit`、`build_commit_date` | 每次构建精确 clone 的 PyTorch 源码（`build_commit` 可为 40 位 SHA 或 tag，如 `v2.13.0`）；**升级 PyTorch 时改 `build_commit` 与 `build_commit_date`** |
 | `compile` | `gpu_archs`、`ck_opt_dim` | `PYTORCH_ROCM_ARCH`（**唯一架构源**）与 CK FMHA `opt_dim` 档位 |
 | `wheel` | `wheel_local_version` | wheel 的 `+local` 标签（env `WHEEL_LOCAL_VERSION`） |
 | `wheel` | `wheel_artifact_name` | GitHub Actions artifact 名称 |
@@ -31,7 +31,7 @@
 
 `EXPECTED_WHEEL_PATTERN`、`CK_TARGETS` 由 `version-lock.ts` / `gpu-archs.ts` 从 lock 推导，不在 lock 中存储（如 `gfx1200;gfx1201` → `CK_TARGETS=--targets gfx12`）。
 
-规则：CI 始终 clone **`pytorch.build_commit`**（`fetch` + `checkout FETCH_HEAD`），再经 `04.patch` 启用 Windows CK SDPA；patch 内 runtime arch 列表与 `compile.gpu_archs` 同源。
+规则：CI 始终 clone **`pytorch.build_commit`**（SHA 或 tag；`fetch origin <ref>` + `checkout FETCH_HEAD`），再经 `04.patch` 启用 Windows CK SDPA；patch 内 runtime arch 列表与 `compile.gpu_archs` 同源。
 
 ### 适用显卡（gfx120x / RDNA4）
 

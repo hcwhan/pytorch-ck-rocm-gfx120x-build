@@ -22,7 +22,7 @@ Toolchain versions are pinned in **`VERSION.lock.json`** and loaded via `npx tsx
 | Section | Field | Role |
 |---------|-------|------|
 | `toolchain` | `python`, `rocm_index`, `rocm` | pip toolchain pins (**no prebuilt torch install**) |
-| `pytorch` | `repo`, `build_commit`, `build_commit_date` | Exact PyTorch source cloned each build; **bump `build_commit` and `build_commit_date` when upgrading PyTorch** |
+| `pytorch` | `repo`, `build_commit`, `build_commit_date` | Exact PyTorch source cloned each build (`build_commit` may be a 40-char SHA or tag such as `v2.13.0`); **bump `build_commit` and `build_commit_date` when upgrading PyTorch** |
 | `compile` | `gpu_archs`, `ck_opt_dim` | `PYTORCH_ROCM_ARCH` (**single arch source**) and CK FMHA `opt_dim` tiers |
 | `wheel` | `wheel_local_version` | Wheel `+local` tag (env `WHEEL_LOCAL_VERSION`) |
 | `wheel` | `wheel_artifact_name` | GitHub Actions artifact name |
@@ -31,7 +31,7 @@ Toolchain versions are pinned in **`VERSION.lock.json`** and loaded via `npx tsx
 
 `EXPECTED_WHEEL_PATTERN` and `CK_TARGETS` are derived from the lock in `version-lock.ts` / `gpu-archs.ts`, not stored in the lock file (e.g. `gfx1200;gfx1201` → `CK_TARGETS=--targets gfx12`).
 
-Prep clones **`pytorch.build_commit`** (`fetch` + `checkout FETCH_HEAD`), then `04.patch` enables Windows CK SDPA; runtime arch lists in the patch follow lock `compile.gpu_archs`.
+Prep clones **`pytorch.build_commit`** (SHA or tag; `fetch origin <ref>` + `checkout FETCH_HEAD`), then `04.patch` enables Windows CK SDPA; runtime arch lists in the patch follow lock `compile.gpu_archs`.
 
 ### Supported GPUs (gfx120x / RDNA4)
 

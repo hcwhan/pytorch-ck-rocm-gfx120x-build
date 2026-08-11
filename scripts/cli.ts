@@ -28,7 +28,7 @@ program
 
 program
   .command("03.prep")
-  .description("按 pin 的 commit clone PyTorch 源码")
+  .description("按 pin 的 SHA 或 tag clone PyTorch 源码")
   .requiredOption("--pt-src <path>")
   .action((opts) => {
     runPrep({ ptSrc: opts.ptSrc });
