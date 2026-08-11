@@ -1,27 +1,27 @@
 name: PT build with ninja cache
-description: Restore ninja cache, run a build CLI step, then save cache
+description: 恢复 ninja 缓存、运行构建 CLI 步骤、保存缓存
 
 inputs:
   pt-src:
-    description: pytorch source root
+    description: PyTorch 源码根目录
     required: true
   cache-key:
-    description: Primary cache key from 05.toolchain-fingerprint
+    description: 05.toolchain-fingerprint 输出的主 cache key
     required: true
   use-cache:
-    description: When true, restore build/ from cache when it exists; when false, lookup-only
+    description: true 时从缓存 restore build/；false 时仅 lookup
     required: false
     default: "true"
   run:
-    description: Shell script executed between cache restore and save
+    description: 在 cache restore 与 save 之间执行的 shell 脚本
     required: true
 
 outputs:
   cache-exists:
-    description: Remote cache entry exists for cache-primary-key
+    description: cache-primary-key 对应的远程缓存条目是否存在
     value: ${{ steps.pt-build-cache.outputs.cache-exists }}
   cache-used:
-    description: Cache was restored into build/
+    description: 已将缓存 restore 到 build/
     value: ${{ steps.pt-build-cache.outputs.cache-used }}
 
 runs:
@@ -41,9 +41,9 @@ runs:
       run: ${{ inputs.run }}
 
     - name: Delete stale ninja cache entry
-      # Delete when cache-exists so save can refresh (actions/cache/save fails on an
-      # existing key). use-cache=true: delete on success or failure (partial save).
-      # use-cache=false: delete only on success (lookup-only cold build refresh path).
+      # cache-exists 时先 delete，以便 save 刷新（actions/cache/save 对已存在 key 会失败）。
+      # use-cache=true：成功或失败均 delete（允许部分 save）。
+      # use-cache=false：仅成功时 delete（仅 lookup 冷构建刷新路径）。
       if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && steps.pt-build-cache.outputs.cache-exists == 'true'
       shell: pwsh
       env:

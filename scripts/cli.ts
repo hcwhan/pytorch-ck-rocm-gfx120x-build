@@ -12,13 +12,13 @@ import { runPublish } from "./commands/10.publish.js";
 
 const program = new Command();
 
-program.name("pt-build").description("PyTorch CK SDPA gfx120x build CLI");
+program.name("pt-build").description("PyTorch CK SDPA gfx120x 构建 CLI");
 
 program
   .command("01.config")
-  .description("Read VERSION.lock.json")
+  .description("读取 VERSION.lock.json")
   .requiredOption("-w, --workspace-root <path>")
-  .option("--export-github-env", "Append lock vars to GITHUB_ENV")
+  .option("--export-github-env", "将 lock 变量追加到 GITHUB_ENV")
   .action((opts) => {
     runConfig({
       workspaceRoot: opts.workspaceRoot,
@@ -28,7 +28,7 @@ program
 
 program
   .command("03.prep")
-  .description("Clone pytorch at pinned commit")
+  .description("按 pin 的 commit clone PyTorch 源码")
   .requiredOption("--pt-src <path>")
   .action((opts) => {
     runPrep({ ptSrc: opts.ptSrc });
@@ -36,7 +36,7 @@ program
 
 program
   .command("04.patch")
-  .description("Patch pytorch for Windows CK SDPA + gfx120x")
+  .description("为 Windows CK SDPA + gfx120x 打补丁")
   .requiredOption("--pt-src <path>")
   .action((opts) => {
     runPatch({ ptSrc: opts.ptSrc });
@@ -44,7 +44,7 @@ program
 
 program
   .command("04.hipify")
-  .description("Run build_amd.py (CUDA -> HIP source generation)")
+  .description("运行 build_amd.py（CUDA → HIP 源码生成）")
   .requiredOption("--pt-src <path>")
   .action((opts) => {
     runHipify({ ptSrc: opts.ptSrc });
@@ -52,8 +52,8 @@ program
 
 program
   .command("05.toolchain-fingerprint")
-  .description("Emit MSVC/clang and pip toolchain cache fingerprints")
-  .option("-w, --workspace-root <path>", "repo root (emit cache-key output)")
+  .description("输出 MSVC/clang 与 pip 工具链缓存指纹")
+  .option("-w, --workspace-root <path>", "仓库根目录（输出 cache-key）")
   .action((opts) => {
     runToolchainFingerprint({
       workspaceRoot: opts.workspaceRoot,
@@ -62,7 +62,7 @@ program
 
 program
   .command("06.build")
-  .description("Compile PyTorch (setup.py build)")
+  .description("编译 PyTorch（setup.py build）")
   .requiredOption("--pt-src <path>")
   .action((opts) => {
     runBuild({ ptSrc: opts.ptSrc });
@@ -70,7 +70,7 @@ program
 
 program
   .command("08.wheel")
-  .description("Package torch wheel (setup.py bdist_wheel)")
+  .description("打包 torch wheel（setup.py bdist_wheel）")
   .requiredOption("--pt-src <path>")
   .requiredOption("--dist-dir <path>")
   .action((opts) => {
@@ -82,11 +82,11 @@ program
 
 program
   .command("09.verify")
-  .description("CPU wheel smoke test")
+  .description("CPU wheel 冒烟测试")
   .requiredOption("--dist-dir <path>")
   .requiredOption(
     "--build-caches <path>",
-    "JSON array file of compile cache metadata",
+    "编译缓存元数据的 JSON 数组文件",
   )
   .action((opts) => {
     runVerify({
@@ -97,7 +97,7 @@ program
 
 program
   .command("10.publish")
-  .description("Prepare GitHub Release metadata")
+  .description("准备 GitHub Release 元数据")
   .requiredOption("--dist-dir <path>")
   .requiredOption("--workflow-name <name>")
   .action((opts) => {

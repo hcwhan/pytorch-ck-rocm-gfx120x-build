@@ -1,27 +1,27 @@
 name: Restore PT ninja build cache
-description: Restore pytorch build/ incremental cache (exact cache-key match only; no restore-keys fallback)
+description: 恢复 PyTorch build/ 增量缓存（仅精确 cache-key 匹配；无 restore-keys 回退）
 
 inputs:
   pt-src:
-    description: pytorch source root
+    description: PyTorch 源码根目录
     required: true
   cache-key:
-    description: Primary cache key from 05.toolchain-fingerprint
+    description: 05.toolchain-fingerprint 输出的主 cache key
     required: true
   use-cache:
-    description: When true, restore build/ from cache when it exists; when false, lookup-only (cache-exists still reported)
+    description: true 时从缓存 restore build/；false 时仅 lookup（仍报告 cache-exists）
     required: false
     default: "true"
 
 outputs:
   cache-exists:
-    description: Remote cache entry exists for cache-primary-key
+    description: cache-primary-key 对应的远程缓存条目是否存在
     value: ${{ steps.pt-build-cache.outputs.cache-exists }}
   cache-used:
-    description: Cache was restored into build/ (use-cache and cache-exists)
+    description: 已将缓存 restore 到 build/（use-cache 且 cache-exists）
     value: ${{ steps.pt-build-cache.outputs.cache-used }}
   cache-primary-key:
-    description: Resolved primary cache key
+    description: 解析后的主 cache key
     value: ${{ steps.pt-build-cache.outputs.cache-primary-key }}
 
 runs:

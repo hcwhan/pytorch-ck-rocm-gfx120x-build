@@ -1,9 +1,9 @@
 name: PT verify and publish
-description: CPU smoke test (09.verify), upload wheel artifact, optional GitHub Release (10.publish + softprops)
+description: CPU 冒烟测试（09.verify）、上传 wheel artifact、可选 GitHub Release（10.publish + softprops）
 
 inputs:
   build-caches:
-    description: Path relative to GITHUB_WORKSPACE for 09.verify --build-caches
+    description: 09.verify --build-caches 相对 GITHUB_WORKSPACE 的路径
     required: true
 
 runs:

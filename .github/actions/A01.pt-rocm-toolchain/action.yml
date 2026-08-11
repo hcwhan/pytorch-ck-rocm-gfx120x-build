@@ -1,18 +1,18 @@
 name: PT ROCm toolchain
-description: Python, MSVC, and rocm[devel] for PyTorch source builds (no prebuilt torch)
+description: PyTorch 源码构建用 Python、MSVC 与 rocm[devel]（不安装预编译 torch）
 
 inputs:
   python-version:
-    description: Python version (VERSION.lock.json toolchain.python)
+    description: Python 版本（VERSION.lock.json toolchain.python）
     required: true
   rocm-index:
-    description: pip index URL for ROCm wheels (VERSION.lock.json toolchain.rocm_index)
+    description: ROCm wheel 的 pip index URL（VERSION.lock.json toolchain.rocm_index）
     required: true
   rocm-version:
-    description: rocm[devel] package version (VERSION.lock.json toolchain.rocm)
+    description: rocm[devel] 包版本（VERSION.lock.json toolchain.rocm）
     required: true
   pip-cache-key:
-    description: Pip toolchain cache key (VERSION.lock.json → PIP_TOOLCHAIN_CACHE_KEY)
+    description: Pip 工具链缓存 key（VERSION.lock.json → PIP_TOOLCHAIN_CACHE_KEY）
     required: true
 
 runs:

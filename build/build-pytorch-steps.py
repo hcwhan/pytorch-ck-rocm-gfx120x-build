@@ -1,4 +1,4 @@
-"""Build PyTorch via subprocess setuptools (build / wheel)."""
+"""通过 subprocess 调用 setuptools 构建 PyTorch（build / wheel）。"""
 from __future__ import annotations
 
 import argparse
@@ -36,7 +36,7 @@ def main() -> None:
         "--step",
         choices=["build", "wheel"],
         required=True,
-        help="build: setup.py build; wheel: setup.py bdist_wheel",
+        help="build：setup.py build；wheel：setup.py bdist_wheel",
     )
     parser.add_argument("--pt-src", type=Path, required=True)
     parser.add_argument("-v", "--verbose", action="store_true")

@@ -1,13 +1,13 @@
 name: PT job bootstrap
-description: Node/npm, 01.config, optional prep/patch, and toolchain (requires job-level actions/checkout before use)
+description: Node/npm、01.config、可选 prep/patch 与工具链（使用前需 job 级 actions/checkout）
 
 inputs:
   prep-source:
-    description: Run 03.prep and 04.patch (requires PT_SRC job env)
+    description: 运行 03.prep 与 04.patch（需 PT_SRC job env）
     required: false
     default: "true"
   setup-toolchain:
-    description: Run A01.pt-rocm-toolchain (reads PYTHON_* / ROCM_* / PIP_TOOLCHAIN_CACHE_KEY from 01.config)
+    description: 运行 A01.pt-rocm-toolchain（从 01.config 读取 PYTHON_* / ROCM_* / PIP_TOOLCHAIN_CACHE_KEY）
     required: false
     default: "true"
 

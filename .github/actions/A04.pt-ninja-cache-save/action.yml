@@ -1,12 +1,12 @@
 name: Save PT ninja build cache
-description: Save pytorch build/ incremental cache
+description: 保存 PyTorch build/ 增量缓存
 
 inputs:
   pt-src:
-    description: pytorch source root
+    description: PyTorch 源码根目录
     required: true
   cache-primary-key:
-    description: cache-primary-key from A02.pt-ninja-cache-restore
+    description: A02.pt-ninja-cache-restore 输出的 cache-primary-key
     required: true
 
 runs:

@@ -1,4 +1,4 @@
-"""Replace make_kernel with make_kernel_pt in CK FMHA generated blobs (cross-platform)."""
+"""在 CK FMHA 生成 blob 中将 make_kernel 替换为 make_kernel_pt（跨平台）。"""
 from __future__ import annotations
 
 import argparse
@@ -20,9 +20,9 @@ def _patch_file(path: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Patch CK FMHA blob sources for PyTorch launch_kernel_pt dispatch.",
+        description="为 PyTorch launch_kernel_pt 分发补丁 CK FMHA blob 源码。",
     )
-    parser.add_argument("blob_list", type=Path, help="Path to blob list file from CK codegen")
+    parser.add_argument("blob_list", type=Path, help="CK codegen 输出的 blob 列表文件路径")
     args = parser.parse_args()
 
     blob_list = args.blob_list.resolve()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deploy-time GPU smoke test for torch CK SDPA (gfx120x hardware; not run in CI)."""
+"""部署前 torch CK SDPA GPU 冒烟测试（gfx120x 真机；CI 不运行）。"""
 from __future__ import annotations
 
 import argparse
@@ -35,12 +35,12 @@ def parse_gpu_archs(gpu_archs: str) -> list[str]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="GPU smoke test for torch CK SDPA wheel")
+    parser = argparse.ArgumentParser(description="torch CK SDPA wheel GPU 冒烟测试")
     parser.add_argument(
         "-w",
         "--workspace-root",
         required=True,
-        help="Repo root containing VERSION.lock.json",
+        help="包含 VERSION.lock.json 的仓库根目录",
     )
     args = parser.parse_args()
 

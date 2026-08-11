@@ -49,7 +49,7 @@
 | `05.toolchain-fingerprint` | MSVC/clang + pip 指纹；`-w` 输出 `cache-key` |
 | `06.build` | `setup.py build`（`initBuildEnv` 含 requirements 安装） |
 | `08.wheel` | `setup.py bdist_wheel` → 复制到 `dist/`（env 重设，不重复 pip install） |
-| `09.verify` | CPU smoke（wheel CK fwd dim 符号 + bwd-off 负向断言 + `is_ck_sdpa_available()`）；manifest 含 `ck_disable_bwd` |
+| `09.verify` | CPU 冒烟（wheel CK fwd dim 符号 + 禁用 bwd 负向断言 + `is_ck_sdpa_available()`）；manifest 含 `ck_disable_bwd` |
 | `10.publish` | Release 元数据 |
 | `build/build-pytorch-steps.py` | `--step build` / `--step wheel` |
 | `build/add-make-kernel-pt.py` | CK FMHA blob `make_kernel`→`make_kernel_pt`（`04.patch` 复制到 PT 源码 `ck/`） |
@@ -72,32 +72,32 @@
 
 ## 设计决策
 
-分析 / refactor 时**勿当缺陷**；与本节冲突时以本节为准。
+分析 / 重构时**勿当缺陷**；与本节冲突时以本节为准。
 
 - **全量 PyTorch 源码编译**（无 parallel workflow）
 - **gfx120x 双架构 wheel**：lock `compile.gpu_archs=gfx1200;gfx1201` → `PYTORCH_ROCM_ARCH` 与 `04.patch` runtime arch 列表同源（经 `scripts/lib/gpu-archs.ts`）
 - **patch 程序化**（`04.patch.ts`）；`CK_OPT_DIM` / `GPU_ARCHS` / `CK_TARGETS` / `CK_FMHA_DISABLE_BWD` 只从 env 取（`CK_TARGETS` 由 lock `gpu_archs` 推导）
-- **ComfyUI 推理 wheel 默认 `compile.ck_disable_bwd=true`**（fwd-only CK FMHA；调用 backward 运行时 `TORCH_CHECK`）
+- **ComfyUI 推理 wheel 默认 `compile.ck_disable_bwd=true`**（仅前向 CK FMHA；调用 backward 运行时 `TORCH_CHECK`）
 - **`/Brepro` + `SOURCE_DATE_EPOCH`**：固定 PE TimeDateStamp 与 wheel zip 时间戳（`/Brepro` 仅追加到 `CMAKE_SHARED_LINKER_FLAGS` / `CMAKE_EXE_LINKER_FLAGS`，不作用于 `llvm-lib` 静态库链接）
-- **`ninja_workers` 默认 4**；**`use_cache` 默认 true**（false 时 lookup-only：`cache-exists` 仍探测，`cache-used=false`）
-- **ninja cache save**：`use_cache=true` 时 build 非 skipped 即 save；**`use_cache=false` 时仅 success save**；`cache-exists` 时 save 前先 delete
+- **`ninja_workers` 默认 4**；**`use_cache` 默认 true**（false 时仅 lookup：`cache-exists` 仍探测，`cache-used=false`）
+- **ninja cache save**：`use_cache=true` 时 build 非 skipped 即 save；**`use_cache=false` 时仅成功时 save**；`cache-exists` 时 save 前先 delete
 - smoke test 在 CPU runner 上验证 wheel CK dim 符号 + `is_ck_sdpa_available()`（不跑 GPU kernel）
 
 ## 编写规范
 
 1. **单一事实来源** — lock 为准；每 job 仅 `01.config` 读 lock 一次，其余从 `GITHUB_ENV` 取。
 2. **信任流水线** — 不为漏传参 / 缺 env 加 silent fallback；`appendGithubEnv` / `appendGithubOutput` 缺文件即 throw。
-3. **最小路径** — 能力一个入口；异常 fail fast，禁止命令内兜底读 lock、`??` 默认 env。
+3. **最小路径** — 能力一个入口；异常快速失败，禁止命令内兜底读 lock、`??` 默认 env。
 4. **AGENTS 增改须简洁** — 并入现有条目，禁复述 README/代码。
 
-**不要添加：** 双源校验、manifest 读回自证、`PT_SKIP_*`、patch 内硬编码 lock 字段、命令内二次 `readVersionLock`、薄 one-liner composite。
+**不要添加：** 双源校验、manifest 读回自证、`PT_SKIP_*`、patch 内硬编码 lock 字段、命令内二次 `readVersionLock`、单行 composite 包装。
 
-**应当保留：** patch before-state；`09.verify` CK dim 符号扫描；cache 精确 key（`torch-ck-gfx120x-serial-v2-{lockHash8}` + 工具链指纹）；`04.patch` `/Brepro`。
+**应当保留：** patch 补丁前状态；`09.verify` CK dim 符号扫描；cache 精确 key（`torch-ck-gfx120x-serial-v2-{lockHash8}` + 工具链指纹）；`04.patch` `/Brepro`。
 
 ## 维护
 
-- 升级 PyTorch：改 `pytorch.build_commit` 与 `pytorch.build_commit_date`，并核对 `04.patch.ts` before-state
-- bump ROCm：同步 `wheel.wheel_local_version`、`release.*`
+- 升级 PyTorch：改 `pytorch.build_commit` 与 `pytorch.build_commit_date`，并核对 `04.patch.ts` 补丁前状态
+- 升级 ROCm：同步 `wheel.wheel_local_version`、`release.*`
 - 调整 GPU 架构：只改 lock `compile.gpu_archs`（Windows 分号分隔）
 - 部署前：`python test/gpu-smoke-test.py -w .`（gfx120x 真机，需已 pip install wheel）
 
