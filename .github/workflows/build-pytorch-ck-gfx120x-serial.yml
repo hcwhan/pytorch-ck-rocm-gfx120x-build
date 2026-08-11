@@ -35,7 +35,6 @@ jobs:
   compile-and-wheel:
     name: compile-and-wheel
     runs-on: windows-2022
-    timeout-minutes: 720
 
     steps:
       - name: Checkout build repo

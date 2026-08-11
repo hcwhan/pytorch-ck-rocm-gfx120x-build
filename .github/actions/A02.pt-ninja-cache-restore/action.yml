@@ -9,7 +9,7 @@ inputs:
     description: Primary cache key from 05.toolchain-fingerprint
     required: true
   skip-cache-restore:
-    description: When true, skip cache restore but still look up cache existence (used to gate save)
+    description: When true, skip cache restore but still look up cache existence (cache-hit output only)
     required: false
     default: "false"
 
@@ -46,7 +46,7 @@ runs:
       shell: pwsh
       run: |
         if ('${{ inputs.skip-cache-restore }}' -eq 'true') {
-          Write-Host "Cache restore skipped by workflow input; save gated on lookup"
+          Write-Host "Cache restore skipped by workflow input; lookup-only for cache-hit output"
           "cache-primary-key=${{ inputs.cache-key }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "cache-hit=${{ steps.cache-lookup.outputs.cache-hit }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
         } else {

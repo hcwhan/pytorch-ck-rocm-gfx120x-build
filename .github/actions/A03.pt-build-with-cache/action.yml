@@ -9,7 +9,7 @@ inputs:
     description: Primary cache key from 05.toolchain-fingerprint
     required: true
   skip-cache-restore:
-    description: When true, skip cache restore (save still gated on cache existence lookup)
+    description: When true, skip cache restore (lookup-only; build/ still saved after compile)
     required: false
     default: "false"
   run:
@@ -38,7 +38,7 @@ runs:
       run: ${{ inputs.run }}
 
     - name: Delete stale ninja cache entry
-      if: always() && steps.run-build.conclusion == 'success' && steps.pt-build-cache.outputs.cache-hit == 'true'
+      if: always() && steps.run-build.conclusion != 'skipped' && steps.pt-build-cache.outputs.cache-hit == 'true'
       shell: pwsh
       env:
         GH_TOKEN: ${{ github.token }}
@@ -52,7 +52,7 @@ runs:
         }
 
     - name: Save ninja incremental build cache
-      if: always() && steps.run-build.conclusion != 'skipped' && (steps.run-build.conclusion == 'success' || steps.pt-build-cache.outputs.cache-hit != 'true')
+      if: always() && steps.run-build.conclusion != 'skipped'
       uses: "./.github/actions/A04.pt-ninja-cache-save"
       with:
         pt-src: ${{ inputs.pt-src }}
