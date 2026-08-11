@@ -20,9 +20,9 @@
 | lock CK OPT_DIM | `CK_OPT_DIM` | lock `compile.ck_opt_dim` 逗号列表；`04.patch` 只读 env |
 | lock CK bwd | `CK_FMHA_DISABLE_BWD` | lock `compile.ck_disable_bwd`（`true` = 推理专用，跳过 bwd codegen / fav_v3 / `FLASHATTENTION_DISABLE_BACKWARD`） |
 | Worktree cache key | `WORKTREE_CACHE_KEY` | `05.toolchain-fingerprint` → bootstrap restore / compile save / manifest `build_caches[].key` |
-| Worktree cache exists | `worktree-cache-exists` | A05 output / manifest `build_caches[].exists` |
-| Worktree cache used | `worktree-cache-used` / `WORKTREE_CACHE_USED` | A05 output / GITHUB_ENV；`true` 时 `06.build` 走 `ninja-install` |
-| Ccache key | `CCACHE_CACHE_KEY` | `05.toolchain-fingerprint` → A07 restore / A08 save |
+| Worktree cache exists | `worktree-cache-exists` | A03 output / manifest `build_caches[].exists` |
+| Worktree cache used | `worktree-cache-used` / `WORKTREE_CACHE_USED` | A03 output / GITHUB_ENV；`true` 时 `06.build` 走 `ninja-install` |
+| Ccache key | `CCACHE_CACHE_KEY` | `05.toolchain-fingerprint` → A02 restore / A06 save |
 | Compile cache metadata | `--build-caches` | workflow 写入 `dist/build-caches.json` → 09.verify → manifest `build_caches`（`opt_dim/key/exists/used`） |
 | wheel local tag | `WHEEL_LOCAL_VERSION` | lock `wheel.wheel_local_version` |
 | PT 相关 env | `PYTORCH_*` | repo / commit / force-build 等 |
@@ -65,13 +65,13 @@
 
 | Action | 用途 |
 |--------|------|
-| `A00.pt-job-bootstrap` | Node/npm + `01.config` + A01 toolchain + worktree restore + 条件 prep/patch/hipify |
+| `A00.pt-job-bootstrap` | Node/npm + `01.config` + A01 toolchain + A02/A03 cache restore + 条件 prep/patch/hipify |
 | `A01.pt-rocm-toolchain` | Python / MSVC / rocm[devel] / ccache（pip toolchain cache） |
-| `A03.pt-build-with-cache` | 编译 + save worktree + ccache |
-| `A07.ccache-restore` | 恢复 `%RUNNER_TEMP%/ccache`（`CCACHE_CACHE_KEY`） |
-| `A08.ccache-save` | 保存 ccache 目录 |
-| `A05.worktree-cache-restore` | 恢复整棵 PT 工作树（`WORKTREE_CACHE_KEY` 精确匹配） |
-| `A06.worktree-cache-save` | 保存整棵 PT 工作树（patch+hipify+build/） |
+| `A02.ccache-restore` | 恢复 `%RUNNER_TEMP%/ccache`（`CCACHE_CACHE_KEY`） |
+| `A03.worktree-cache-restore` | 恢复整棵 PT 工作树（`WORKTREE_CACHE_KEY` 精确匹配） |
+| `A04.pt-build-with-cache` | 编译 + save worktree + ccache |
+| `A05.worktree-cache-save` | 保存整棵 PT 工作树（patch+hipify+build/） |
+| `A06.ccache-save` | 保存 ccache 目录 |
 | `A99.pt-verify-publish` | `09.verify` + artifact + 可选 Release |
 
 ## 设计决策

@@ -45,7 +45,7 @@ jobs:
         uses: "./.github/actions/A00.pt-job-bootstrap"
 
       - name: Compile PyTorch with worktree cache
-        uses: "./.github/actions/A03.pt-build-with-cache"
+        uses: "./.github/actions/A04.pt-build-with-cache"
         with:
           pt-src: ${{ env.PT_SRC }}
           cache-key: ${{ env.WORKTREE_CACHE_KEY }}

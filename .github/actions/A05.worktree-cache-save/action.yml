@@ -6,7 +6,7 @@ inputs:
     description: PyTorch 源码根目录
     required: true
   cache-key:
-    description: WORKTREE_CACHE_KEY（与 A05 restore 相同）
+    description: WORKTREE_CACHE_KEY（与 A03 restore 相同）
     required: true
 
 runs:

@@ -41,11 +41,11 @@ runs:
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Restore ccache
-      uses: "./.github/actions/A07.ccache-restore"
+      uses: "./.github/actions/A02.ccache-restore"
 
     - name: Restore worktree cache
       id: worktree-cache
-      uses: "./.github/actions/A05.worktree-cache-restore"
+      uses: "./.github/actions/A03.worktree-cache-restore"
       with:
         pt-src: ${{ env.PT_SRC }}
         use-cache: ${{ env.USE_CACHE }}
