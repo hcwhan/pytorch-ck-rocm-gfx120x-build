@@ -11,10 +11,47 @@ import { requireLockEnv } from "../lib/require-env.js";
 
 type PatchPoint = {
   name: string;
-  before: string;
-  after: string;
+  before: string | string[];
+  after: string | string[];
   replaceAll?: boolean;
 };
+
+function resolvePatchVariant(
+  content: string,
+  point: PatchPoint,
+): { before: string; after: string } {
+  if (typeof point.before === "string") {
+    if (typeof point.after !== "string") {
+      throw new Error(
+        `patch: '${point.name}' single before requires a single after`,
+      );
+    }
+    return { before: point.before, after: point.after };
+  }
+
+  const afters =
+    typeof point.after === "string"
+      ? point.before.map(() => point.after as string)
+      : Array.isArray(point.after)
+        ? point.after
+        : [point.after];
+  if (point.before.length !== afters.length) {
+    throw new Error(
+      `patch: '${point.name}' before/after alternative count mismatch`,
+    );
+  }
+
+  for (let i = 0; i < point.before.length; i++) {
+    const before = point.before[i]!;
+    if (content.includes(before)) {
+      return { before, after: afters[i]! };
+    }
+  }
+
+  throw new Error(
+    `patch: before-state not found for '${point.name}' (${point.before.length} alternatives)`,
+  );
+}
 
 function readNormalized(filePath: string): { content: string; eol: "\n" | "\r\n" } {
   const raw = readFileSync(filePath, "utf8");
@@ -33,11 +70,15 @@ function writeNormalized(
 
 function applyPoints(filePath: string, points: PatchPoint[]): void {
   let { content, eol } = readNormalized(filePath);
+  const resolved = points.map((point) => ({
+    point,
+    variant: resolvePatchVariant(content, point),
+  }));
 
-  for (const point of points) {
+  for (const { point, variant } of resolved) {
     const count = point.replaceAll
-      ? content.split(point.before).length - 1
-      : content.includes(point.before)
+      ? content.split(variant.before).length - 1
+      : content.includes(variant.before)
         ? 1
         : 0;
     if (count < 1) {
@@ -46,10 +87,10 @@ function applyPoints(filePath: string, points: PatchPoint[]): void {
     console.log(`  OK ${point.name}: before-state found (${count})`);
   }
 
-  for (const point of points) {
+  for (const { point, variant } of resolved) {
     content = point.replaceAll
-      ? content.replaceAll(point.before, point.after)
-      : content.replace(point.before, point.after);
+      ? content.replaceAll(variant.before, variant.after)
+      : content.replace(variant.before, variant.after);
     console.log(`  OK ${point.name}: patched`);
   }
 
@@ -314,10 +355,33 @@ const BWD_DISABLED_MSG =
   "This flash attention build does not support backward.";
 
 function buildMhaBwdCkStubPoints(): PatchPoint[] {
+  const omitFunctionBodyBefore = [
+    `#endif
+    if (is_causal) { window_size_right = 0; }
+
+    bool is_dropout = p_dropout > 0.0;
+    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
+    `#ifdef FLASHATTENTION_DISABLE_BACKWARD
+    TORCH_CHECK(false, "This flash attention build does not support backward.");
+#endif
+    if (is_causal) { window_size_right = 0; }
+
+    bool is_dropout = p_dropout > 0.0;
+    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
+  ];
+  const omitFunctionBodyAfter = `#endif
+    TORCH_CHECK(false, "${BWD_DISABLED_MSG}");
+#if 0 // upstream CK FMHA bwd body omitted (CK_FMHA_DISABLE_BWD=1)
+    if (is_causal) { window_size_right = 0; }
+
+    bool is_dropout = p_dropout > 0.0;
+    auto stream = at::cuda::getCurrentCUDAStream().stream();`;
+
   return [
     {
       name: "mha-bwd-ck-omit-helper-preamble",
-      before: `#include <mha_bwd.h>
+      before: [
+        `#include <mha_bwd.h>
 #include <fmha_bwd.hpp>
 #include <mask.hpp>
 
@@ -326,41 +390,72 @@ function buildMhaBwdCkStubPoints(): PatchPoint[] {
 namespace pytorch_flash {
 
 // SFINAE for newer composable_kernel \`fmha_bwd.hpp\` vs older CK (see mha_fwd_ck.hip).`,
-      after: `namespace pytorch_flash {
+        `#include <mha_bwd.h>
+#include <fmha_bwd.hpp>
+#include <mask.hpp>
 
-#if 0 // CK FMHA bwd helpers omitted (CK_FMHA_DISABLE_BWD=1)
+namespace pytorch_flash {
+
+aiter::mha_bwd_args get_ck_fmha_bwd_args`,
+      ],
+      after: [
+        `#if 0 // CK FMHA bwd helpers omitted (CK_FMHA_DISABLE_BWD=1)
+#include <mha_bwd.h>
+#include <fmha_bwd.hpp>
+#include <mask.hpp>
+
+#include <type_traits>
+
+namespace pytorch_flash {
+
 // SFINAE for newer composable_kernel \`fmha_bwd.hpp\` vs older CK (see mha_fwd_ck.hip).`,
+        `#if 0 // CK FMHA bwd helpers omitted (CK_FMHA_DISABLE_BWD=1)
+#include <mha_bwd.h>
+#include <fmha_bwd.hpp>
+#include <mask.hpp>
+
+namespace pytorch_flash {
+
+aiter::mha_bwd_args get_ck_fmha_bwd_args`,
+      ],
     },
     {
       name: "mha-bwd-ck-close-helper-if0",
-      before: `    args.drop_seed_offset       = drop_seed_offset;
+      before: [
+        `    args.drop_seed_offset       = drop_seed_offset;
     return args;
 }
 
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
 mha_bwd_ck(const at::Tensor &dout,                   // batch_size x seqlen_q x num_heads, x head_size_og`,
-      after: `    args.drop_seed_offset       = drop_seed_offset;
+        `        drop_seed_offset
+    };
+}
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
+mha_bwd_ck(const at::Tensor &dout,                   // batch_size x seqlen_q x num_heads, x head_size_og`,
+      ],
+      after: [
+        `    args.drop_seed_offset       = drop_seed_offset;
     return args;
 }
 #endif
 
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
 mha_bwd_ck(const at::Tensor &dout,                   // batch_size x seqlen_q x num_heads, x head_size_og`,
+        `        drop_seed_offset
+    };
+}
+#endif
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
+mha_bwd_ck(const at::Tensor &dout,                   // batch_size x seqlen_q x num_heads, x head_size_og`,
+      ],
     },
     {
       name: "mha-bwd-ck-omit-function-body",
-      before: `#endif
-    if (is_causal) { window_size_right = 0; }
-
-    bool is_dropout = p_dropout > 0.0;
-    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
-      after: `#endif
-    TORCH_CHECK(false, "${BWD_DISABLED_MSG}");
-#if 0 // upstream CK FMHA bwd body omitted (CK_FMHA_DISABLE_BWD=1)
-    if (is_causal) { window_size_right = 0; }
-
-    bool is_dropout = p_dropout > 0.0;
-    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
+      before: omitFunctionBodyBefore,
+      after: omitFunctionBodyAfter,
     },
     {
       name: "mha-bwd-ck-close-function-body-if0",
@@ -376,10 +471,33 @@ mha_bwd_ck(const at::Tensor &dout,                   // batch_size x seqlen_q x 
 }
 
 function buildMhaVarlenBwdCkStubPoints(): PatchPoint[] {
+  const omitFunctionBodyBefore = [
+    `#endif
+    if (is_causal) { window_size_right = 0; }
+
+    bool is_dropout = p_dropout > 0.0;
+    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
+    `#ifdef FLASHATTENTION_DISABLE_BACKWARD
+    TORCH_CHECK(false, "This flash attention build does not support backward.");
+#endif
+    if (is_causal) { window_size_right = 0; }
+
+    bool is_dropout = p_dropout > 0.0;
+    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
+  ];
+  const omitFunctionBodyAfter = `#endif
+    TORCH_CHECK(false, "${BWD_DISABLED_MSG}");
+#if 0 // upstream CK FMHA bwd body omitted (CK_FMHA_DISABLE_BWD=1)
+    if (is_causal) { window_size_right = 0; }
+
+    bool is_dropout = p_dropout > 0.0;
+    auto stream = at::cuda::getCurrentCUDAStream().stream();`;
+
   return [
     {
       name: "mha-varlen-bwd-ck-omit-helper-preamble",
-      before: `#include <fmha_bwd.hpp>
+      before: [
+        `#include <fmha_bwd.hpp>
 #include <mask.hpp>
 
 #include <type_traits>
@@ -387,41 +505,71 @@ function buildMhaVarlenBwdCkStubPoints(): PatchPoint[] {
 namespace pytorch_flash {
 
 // SFINAE for newer composable_kernel \`fmha_bwd.hpp\` layout vs older CK revisions.`,
-      after: `namespace pytorch_flash {
+        `#include <fmha_bwd.hpp>
+#include <mask.hpp>
 
-#if 0 // CK FMHA bwd helpers omitted (CK_FMHA_DISABLE_BWD=1)
+
+namespace pytorch_flash {
+
+
+fmha_bwd_traits get_ck_fmha_varlen_bwd_traits`,
+      ],
+      after: [
+        `#if 0 // CK FMHA bwd helpers omitted (CK_FMHA_DISABLE_BWD=1)
+#include <fmha_bwd.hpp>
+#include <mask.hpp>
+
+#include <type_traits>
+
+namespace pytorch_flash {
+
 // SFINAE for newer composable_kernel \`fmha_bwd.hpp\` layout vs older CK revisions.`,
+        `#if 0 // CK FMHA bwd helpers omitted (CK_FMHA_DISABLE_BWD=1)
+#include <fmha_bwd.hpp>
+#include <mask.hpp>
+
+
+namespace pytorch_flash {
+
+
+fmha_bwd_traits get_ck_fmha_varlen_bwd_traits`,
+      ],
     },
     {
       name: "mha-varlen-bwd-ck-close-helper-if0",
-      before: `    args.drop_seed_offset        = drop_seed_offset;
+      before: [
+        `    args.drop_seed_offset        = drop_seed_offset;
     return args;
 }
 
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
 mha_varlen_bwd_ck(const at::Tensor &dout,                   // total_q x num_heads x head_size`,
-      after: `    args.drop_seed_offset        = drop_seed_offset;
+        `                         drop_seed_offset};
+}
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
+mha_varlen_bwd_ck(const at::Tensor &dout,                   // total_q x num_heads x head_size`,
+      ],
+      after: [
+        `    args.drop_seed_offset        = drop_seed_offset;
     return args;
 }
 #endif
 
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
 mha_varlen_bwd_ck(const at::Tensor &dout,                   // total_q x num_heads x head_size`,
+        `                         drop_seed_offset};
+}
+#endif
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
+mha_varlen_bwd_ck(const at::Tensor &dout,                   // total_q x num_heads x head_size`,
+      ],
     },
     {
       name: "mha-varlen-bwd-ck-omit-function-body",
-      before: `#endif
-    if (is_causal) { window_size_right = 0; }
-
-    bool is_dropout = p_dropout > 0.0;
-    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
-      after: `#endif
-    TORCH_CHECK(false, "${BWD_DISABLED_MSG}");
-#if 0 // upstream CK FMHA bwd body omitted (CK_FMHA_DISABLE_BWD=1)
-    if (is_causal) { window_size_right = 0; }
-
-    bool is_dropout = p_dropout > 0.0;
-    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
+      before: omitFunctionBodyBefore,
+      after: omitFunctionBodyAfter,
     },
     {
       name: "mha-varlen-bwd-ck-close-function-body-if0",
@@ -538,8 +686,18 @@ export function runPatch(options: { ptSrc: string }): void {
   applyPoints(path.join(root, "aten/src/ATen/Context.cpp"), [
     {
       name: "ck-sdpa-gfx12-arch-list",
-      before: '"gfx942", "gfx950",',
-      after: `"gfx942", "gfx950", ${gpuArchCpp},`,
+      before: [
+        '"gfx942", "gfx950",',
+        `  static const std::vector<std::string> supported_archs = {
+    "gfx942", "gfx950"
+  };`,
+      ],
+      after: [
+        `"gfx942", "gfx950", ${gpuArchCpp},`,
+        `  static const std::vector<std::string> supported_archs = {
+    "gfx942", "gfx950", ${gpuArchCpp}
+  };`,
+      ],
     },
   ]);
 
