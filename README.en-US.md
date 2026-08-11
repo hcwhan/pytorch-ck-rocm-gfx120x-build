@@ -62,7 +62,7 @@ Push to `main` does **not** auto-trigger builds.
 | Input | Default | Description |
 |-------|---------|-------------|
 | `ninja_workers` | `4` | Ninja parallel workers (use `2` if OOM) |
-| `skip_cache_restore` | `false` | Set `true` to skip cache restore (lookup-only probe; cache still saved after compile) |
+| `skip_cache` | `false` | Set `true` to skip ninja cache restore and save (cold build) |
 | `publish_release` | `true` | Set `false` to skip GitHub Release upload |
 
 ### Serial (`build-pytorch-ck-gfx120x-serial.yml`)

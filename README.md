@@ -62,7 +62,7 @@
 | 输入 | 默认 | 说明 |
 |------|------|------|
 | `ninja_workers` | `4` | Ninja 并行 worker 数（OOM 时可改为 `2`） |
-| `skip_cache_restore` | `false` | 设为 `true` 时跳过 cache restore（仅 lookup 探测，仍会在编译后保存） |
+| `skip_cache` | `false` | 设为 `true` 时跳过 ninja cache 的 restore 与 save（全量冷编译） |
 | `publish_release` | `true` | 设为 `false` 时跳过 GitHub Release 上传 |
 
 ### 串行（`build-pytorch-ck-gfx120x-serial.yml`）

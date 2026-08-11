@@ -77,7 +77,7 @@
 - **patch 程序化**（`04.patch.ts`）；`CK_OPT_DIM` / `GPU_ARCHS` / `CK_TARGETS` / `CK_FMHA_DISABLE_BWD` 只从 env 取（`CK_TARGETS` 由 lock `gpu_archs` 推导）
 - **ComfyUI 推理 wheel 默认 `compile.ck_disable_bwd=true`**（fwd-only CK FMHA；调用 backward 运行时 `TORCH_CHECK`）
 - **`/Brepro` + `SOURCE_DATE_EPOCH`**：固定 PE TimeDateStamp 与 wheel zip 时间戳（`/Brepro` 仅追加到 `CMAKE_SHARED_LINKER_FLAGS` / `CMAKE_EXE_LINKER_FLAGS`，不作用于 `llvm-lib` 静态库链接）
-- **`ninja_workers` 默认 4**；**`skip_cache_restore` 默认 false**
+- **`ninja_workers` 默认 4**；**`skip_cache` 默认 false**（`true` 时不 restore 也不 save）
 - **ninja cache save**：只要 build 跑过（非 skipped）即 save；`cache-hit` 时 save 前先 delete 旧条目
 - smoke test 在 CPU runner 上验证 wheel CK dim 符号 + `is_ck_sdpa_available()`（不跑 GPU kernel）
 
