@@ -7,6 +7,25 @@ import { requireLockEnv } from "./require-env.js";
 
 const PYTHON = "python";
 
+function applyCcacheEnv(ptSrc: string): void {
+  const ccacheDir = process.env.CCACHE_DIR?.trim();
+  if (!ccacheDir) {
+    return;
+  }
+
+  process.env.CMAKE_C_COMPILER_LAUNCHER = "ccache";
+  process.env.CMAKE_CXX_COMPILER_LAUNCHER = "ccache";
+  process.env.CMAKE_ARGS = `${process.env.CMAKE_ARGS} -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache`;
+  process.env.CCACHE_BASEDIR = ptSrc;
+  process.env.CCACHE_SLOPPINESS ??=
+    "time_macros,include_file_mtime,pch_defines,random_seed";
+  process.env.CCACHE_MAXSIZE ??= "2G";
+
+  console.log(`CCACHE_DIR=${ccacheDir}`);
+  console.log(`CCACHE_BASEDIR=${process.env.CCACHE_BASEDIR}`);
+  run("ccache", ["--zero-stats"], { quiet: true });
+}
+
 export function initBuildEnv(options: {
   ptSrc: string;
   installRequirements?: boolean;
@@ -62,6 +81,8 @@ export function initBuildEnv(options: {
   process.env.PATH = `${llvmBin};${rocmBin};${process.env.PATH ?? ""}`;
   process.env.CC = "clang-cl";
   process.env.CXX = "clang-cl";
+
+  applyCcacheEnv(ptSrc);
 
   console.log(`MAX_JOBS=${maxJobs}`);
   console.log(`PYTORCH_ROCM_ARCH=${process.env.PYTORCH_ROCM_ARCH}`);

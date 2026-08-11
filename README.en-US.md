@@ -79,11 +79,11 @@ Push to `main` does **not** auto-trigger builds.
 - `wheelHash8`: lock `wheel`
 - `pipToolchain`: pip / setuptools / wheel / ninja / packaging / psutil / **cmake**
 - **Exact match only** (no `restore-keys`)
-- **hit**: skip prep / patch / hipify; incremental compile
+- **hit**: skip prep / patch / hipify; `06.build` uses **`ninja-install`** (no setup.py/cmake rerun)
 - **miss**: prep → patch → hipify → compile → save
 - `use_cache=false`: skip restore (still probes `exists`); save only after a **successful** compile
 
-A separate **pip toolchain cache** (`PIP_TOOLCHAIN_CACHE_KEY`) layers above worktree cache.
+A separate **pip toolchain cache** (`PIP_TOOLCHAIN_CACHE_KEY`) and **ccache** (`CCACHE_CACHE_KEY`, `ccache-v1-{lockHash8}-{patchHash8}-…`) layer above worktree cache.
 
 ### Build stages
 
@@ -91,7 +91,8 @@ Single entry point for compile and wheel packaging: `build/build-pytorch-steps.p
 
 | step | Role |
 |------|------|
-| `build` | `setup.py build` (full compile) |
+| `build` | `setup.py build` (worktree miss cold start) |
+| `ninja-install` | `ninja -C build install` (worktree hit incremental compile) |
 | `wheel` | `setup.py bdist_wheel` (package wheel) |
 
 Serial workflow invocation: `--step build` → `--step wheel`.

@@ -49,3 +49,7 @@ runs:
       with:
         pt-src: ${{ inputs.pt-src }}
         cache-key: ${{ inputs.cache-key }}
+
+    - name: Save ccache
+      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success')
+      uses: "./.github/actions/A08.ccache-save"

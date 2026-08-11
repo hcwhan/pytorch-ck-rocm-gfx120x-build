@@ -1,0 +1,12 @@
+name: Save ccache
+description: 保存 GHA ccache 目录（compile 后）
+
+runs:
+  using: composite
+  steps:
+    - name: Save ccache
+      if: env.CCACHE_CACHE_KEY != ''
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ runner.temp }}/ccache
+        key: ${{ env.CCACHE_CACHE_KEY }}

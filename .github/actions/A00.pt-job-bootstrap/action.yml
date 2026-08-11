@@ -40,6 +40,9 @@ runs:
         npx tsx scripts/cli.ts 05.toolchain-fingerprint -w $env:GITHUB_WORKSPACE --export-github-env
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+    - name: Restore ccache
+      uses: "./.github/actions/A07.ccache-restore"
+
     - name: Restore worktree cache
       id: worktree-cache
       uses: "./.github/actions/A05.worktree-cache-restore"
@@ -72,3 +75,8 @@ runs:
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         npx tsx scripts/cli.ts 03.worktree-stamp --pt-src $env:PT_SRC -w $env:GITHUB_WORKSPACE --write
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    - name: Export worktree cache used env
+      shell: pwsh
+      run: |
+        "WORKTREE_CACHE_USED=${{ steps.worktree-cache.outputs.cache-used }}" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8

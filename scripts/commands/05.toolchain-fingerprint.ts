@@ -3,6 +3,7 @@ import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { runCapture } from "../lib/exec.js";
 import { appendGithubEnv } from "../lib/github.js";
+import { buildCcacheCacheKey } from "../lib/ccache-cache-key.js";
 import { buildPatchHash8 } from "../lib/pt-patch-hash.js";
 import { buildWorktreeCacheKey } from "../lib/worktree-cache-key.js";
 import { getRocmSdkPaths } from "../lib/rocm-sdk-paths.js";
@@ -141,12 +142,23 @@ export function runToolchainFingerprint(options?: {
       rocmClangHash,
       pipToolchainHash,
     });
+    const ccacheKey = buildCcacheCacheKey({
+      lockHash8: lockHash,
+      patchHash8: patchHash,
+      msvcHash,
+      rocmClangHash,
+      pipToolchainHash,
+    });
     console.log(`VERSION.lock.json fingerprint: ${lockHash}`);
     console.log(`Patch inputs fingerprint: ${patchHash}`);
     console.log(`Wheel lock fingerprint: ${wheelHash}`);
     console.log(`Worktree cache key: ${cacheKey}`);
+    console.log(`Ccache cache key: ${ccacheKey}`);
     if (options.exportGithubEnv) {
-      appendGithubEnv({ WORKTREE_CACHE_KEY: cacheKey });
+      appendGithubEnv({
+        WORKTREE_CACHE_KEY: cacheKey,
+        CCACHE_CACHE_KEY: ccacheKey,
+      });
     }
     return;
   }

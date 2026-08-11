@@ -79,11 +79,11 @@
 - `wheelHash8`：lock `wheel`
 - `pipToolchain`：pip / setuptools / wheel / ninja / packaging / psutil / **cmake**
 - **仅精确匹配**（无 `restore-keys`）
-- **hit**：跳过 prep / patch / hipify，直接增量 compile
+- **hit**：跳过 prep / patch / hipify；`06.build` 走 **`ninja-install`**（不 rerun setup.py/cmake）
 - **miss**：prep → patch → hipify → compile → save
 - `use_cache=false`：不 restore（仍 lookup 记录 `exists`）；仅 compile **成功**时 save
 
-另有独立 **pip toolchain cache**（`PIP_TOOLCHAIN_CACHE_KEY`），与 worktree cache 分层。
+另有独立 **pip toolchain cache**（`PIP_TOOLCHAIN_CACHE_KEY`）与 **ccache**（`CCACHE_CACHE_KEY`，`ccache-v1-{lockHash8}-{patchHash8}-…`）分层。
 
 ### 构建阶段
 
@@ -91,7 +91,8 @@
 
 | step | 作用 |
 |------|------|
-| `build` | `setup.py build`（全量编译） |
+| `build` | `setup.py build`（worktree miss 冷启动） |
+| `ninja-install` | `ninja -C build install`（worktree hit 增量编译） |
 | `wheel` | `setup.py bdist_wheel`（打包 wheel） |
 
 串行 workflow 调用序列：`--step build` → `--step wheel`。

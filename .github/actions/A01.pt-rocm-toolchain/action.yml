@@ -28,6 +28,23 @@ runs:
       with:
         python-version: ${{ inputs.python-version }}
 
+    - name: Install ccache
+      shell: pwsh
+      run: |
+        choco install ccache --no-progress -y
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        $machinePath = [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
+        $userPath = [System.Environment]::GetEnvironmentVariable('Path', 'User')
+        $env:Path = "$machinePath;$userPath"
+        ccache --version
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    - name: Export ccache directory
+      shell: pwsh
+      run: |
+        "CCACHE_DIR=$env:RUNNER_TEMP/ccache" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+        "CCACHE_COMPRESS=true" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
     - name: Restore pip toolchain cache
       uses: actions/cache/restore@v6
       id: pip-toolchain-cache

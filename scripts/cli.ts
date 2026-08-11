@@ -86,7 +86,7 @@ program
   .command("05.toolchain-fingerprint")
   .description("输出 worktree cache key（lock+patch+wheel+toolchain 指纹）")
   .option("-w, --workspace-root <path>", "仓库根目录（输出 cache-key）")
-  .option("--export-github-env", "将 WORKTREE_CACHE_KEY 追加到 GITHUB_ENV")
+  .option("--export-github-env", "将 WORKTREE_CACHE_KEY / CCACHE_CACHE_KEY 追加到 GITHUB_ENV")
   .action((opts) => {
     runToolchainFingerprint({
       workspaceRoot: opts.workspaceRoot,
@@ -96,7 +96,7 @@ program
 
 program
   .command("06.build")
-  .description("编译 PyTorch（setup.py build）")
+  .description("编译 PyTorch（worktree hit 时 ninja-install，否则 setup.py build）")
   .requiredOption("--pt-src <path>")
   .action((opts) => {
     runBuild({ ptSrc: opts.ptSrc });

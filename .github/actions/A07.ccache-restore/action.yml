@@ -1,0 +1,18 @@
+name: Restore ccache
+description: 恢复 GHA ccache 目录（CCACHE_CACHE_KEY 精确匹配）
+
+runs:
+  using: composite
+  steps:
+    - name: Restore ccache
+      uses: actions/cache/restore@v6
+      id: ccache-restore
+      with:
+        path: ${{ runner.temp }}/ccache
+        key: ${{ env.CCACHE_CACHE_KEY }}
+
+    - name: Log ccache restore
+      shell: pwsh
+      run: |
+        $hit = '${{ steps.ccache-restore.outputs.cache-hit }}' -eq 'true'
+        Write-Host "ccache restore: hit=$hit key=$env:CCACHE_CACHE_KEY dir=$env:CCACHE_DIR"
