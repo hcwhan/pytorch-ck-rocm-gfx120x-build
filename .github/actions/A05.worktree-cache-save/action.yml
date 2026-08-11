@@ -1,5 +1,5 @@
 name: Save worktree cache
-description: 保存 patch+hipify+build/ 整棵 PyTorch 工作树（含 .worktree-stamp.json）
+description: 保存 patch+hipify+build/ 整棵 PyTorch 工作树
 
 inputs:
   pt-src:

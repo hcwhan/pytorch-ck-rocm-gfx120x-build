@@ -21,9 +21,9 @@
 | lock CK bwd | `CK_FMHA_DISABLE_BWD` | lock `compile.ck_disable_bwd`（`true` = 推理专用，跳过 bwd codegen / fav_v3 / `FLASHATTENTION_DISABLE_BACKWARD`） |
 | Worktree cache key | `WORKTREE_CACHE_KEY` | `02.toolchain-fingerprint` → bootstrap restore / compile save / manifest `build_caches[].key` |
 | Worktree cache exists | `worktree-cache-exists` | A03 output / manifest `build_caches[].exists` |
-| Worktree cache used | `worktree-cache-used` / `WORKTREE_CACHE_USED` | A03 output / GITHUB_ENV；`true` 时 `07.build` 走 `ninja-install` |
+| Worktree cache used | `worktree-cache-used` / `WORKTREE_CACHE_USED` | A03 output / GITHUB_ENV；`true` 时 `06.build` 走 `ninja-install` |
 | Ccache key | `CCACHE_CACHE_KEY` | `02.toolchain-fingerprint` → A02 restore / A06 save |
-| Compile cache metadata | `--build-caches` | workflow 写入 `dist/build-caches.json` → 09.verify → manifest `build_caches`（`opt_dim/key/exists/used`） |
+| Compile cache metadata | `--build-caches` | workflow 写入 `dist/build-caches.json` → 08.verify → manifest `build_caches`（`opt_dim/key/exists/used`） |
 | wheel local tag | `WHEEL_LOCAL_VERSION` | lock `wheel.wheel_local_version` |
 | PT 相关 env | `PYTORCH_*` | repo / commit / force-build 等 |
 
@@ -42,17 +42,16 @@
 | `scripts/lib/gpu-archs.ts` | 解析 lock `GPU_ARCHS`；由 `gpu_archs` 推导 `CK_TARGETS`（HIP → CK 族映射）供 patch |
 | `scripts/lib/require-env.ts` | CI env 读取；缺 env 直接 throw |
 | `scripts/lib/rocm-sdk-paths.ts` | ROCm SDK 路径（唯一路径发现） |
-| `scripts/lib/init-build-env.ts` | ROCm 编译 env（含 `USE_KINETO=0`；Windows 无 rocprofiler）；`installRequirements` 默认 true（仅 `07.build`） |
+| `scripts/lib/init-build-env.ts` | ROCm 编译 env（含 `USE_KINETO=0`；Windows 无 rocprofiler）；`installRequirements` 默认 true（仅 `06.build`） |
 | `01.config` | 读 lock；`--export-github-env` 写 CI env |
 | `02.toolchain-fingerprint` | MSVC/clang + pip 指纹；`-w --export-github-env` 输出 `WORKTREE_CACHE_KEY` + `CCACHE_CACHE_KEY` |
 | `03.prep` | clone PyTorch + 浅 submodule；写入 `.pt-prep-stamp.json`（worktree cache miss 时由 bootstrap 调用） |
 | `04.patch` | Windows CK SDPA + gfx120x 程序化补丁 + MSVC `/Brepro`（仅 shared/exe 链接器，避开 llvm-lib 静态库）；`CK_FMHA_DISABLE_BWD=1` 时省略 bwd codegen/fav_v3、GLOB 排除 `fmha_bwd` blob、**就地 patch** upstream bwd wrapper 并设 `FLASHATTENTION_DISABLE_BACKWARD`；否则完整 bwd；`CK_FMHA_GENERATE` 用 `${Python3_EXECUTABLE}`；部署 `add_make_kernel_pt.py` + `.cpp→.hip` CMake `file(RENAME)` + CK emit 独立 `RESULT_VARIABLE` |
 | `05.hipify` | `tools/amd_build/build_amd.py`（生成 `c10/hip/`、`THH/` 等 ROCm 源码） |
-| `06.worktree-stamp` | 写入/校验 `.worktree-stamp.json`（worktree cache hit 后 skip patch/hipify） |
-| `07.build` | worktree hit：`ninja-install`；miss：`setup.py build`（`initBuildEnv` 含 ccache launcher + requirements） |
-| `08.wheel` | `setup.py bdist_wheel` → 复制到 `dist/`（env 重设，不重复 pip install） |
-| `09.verify` | CPU 冒烟（wheel CK fwd dim 符号 + 禁用 bwd 负向断言 + `is_ck_sdpa_available()`）；manifest 含 `ck_disable_bwd` |
-| `10.publish` | Release 元数据 |
+| `06.build` | worktree hit：`ninja-install`；miss：`setup.py build`（`initBuildEnv` 含 ccache launcher + requirements） |
+| `07.wheel` | `setup.py bdist_wheel` → 复制到 `dist/`（env 重设，不重复 pip install） |
+| `08.verify` | CPU 冒烟（wheel CK fwd dim 符号 + 禁用 bwd 负向断言 + `is_ck_sdpa_available()`）；manifest 含 `ck_disable_bwd` |
+| `09.publish` | Release 元数据 |
 | `build/build-pytorch-steps.py` | `--step build` / `--step ninja-install` / `--step wheel` |
 | `build/add-make-kernel-pt.py` | CK FMHA blob `make_kernel`→`make_kernel_pt`（`04.patch` 复制到 PT 源码 `ck/`） |
 | `test/gpu-smoke-test.py` | 部署前 GPU 校验（gfx120x 真机；CI 不跑） |
@@ -72,7 +71,7 @@
 | `A04.pt-build-with-cache` | 编译 + save worktree + ccache |
 | `A05.worktree-cache-save` | 保存整棵 PT 工作树（patch+hipify+build/） |
 | `A06.ccache-save` | 保存 ccache 目录 |
-| `A99.pt-verify-publish` | `09.verify` + artifact + 可选 Release |
+| `A99.pt-verify-publish` | `08.verify` + artifact + 可选 Release |
 
 ## 设计决策
 
@@ -85,7 +84,7 @@
 - **`/Brepro` + `SOURCE_DATE_EPOCH`**：固定 PE TimeDateStamp 与 wheel zip 时间戳（`/Brepro` 仅追加到 `CMAKE_SHARED_LINKER_FLAGS` / `CMAKE_EXE_LINKER_FLAGS`，不作用于 `llvm-lib` 静态库链接）
 - **`use_cache` 默认 true**（false 时不 restore worktree，仅 lookup；compile 后仅成功时 save）
 - **worktree cache save**：`use_cache=true` 时 build 非 skipped 即 save（含失败/取消）；**`use_cache=false` 时仅成功时 save**；`cache-exists` 时 save 前先 delete
-- **worktree hit 编译**：`07.build` 走 `ninja-install`（不 rerun `setup.py build` / cmake configure）
+- **worktree hit 编译**：`06.build` 走 `ninja-install`（不 rerun `setup.py build` / cmake configure）
 - **ccache**：`CMAKE_*_COMPILER_LAUNCHER=ccache`；GHA cache 前缀 `ccache-v1-{lockHash8}-{patchHash8}-…`
 - smoke test 在 CPU runner 上验证 wheel CK dim 符号 + `is_ck_sdpa_available()`（不跑 GPU kernel）
 
@@ -98,7 +97,7 @@
 
 **不要添加：** 双源校验、manifest 读回自证、`PT_SKIP_*`、patch 内硬编码 lock 字段、命令内二次 `readVersionLock`、单行 composite 包装。
 
-**应当保留：** patch 补丁前状态；`09.verify` CK dim 符号扫描；worktree cache 精确 key（`worktree-v1-…`）；`04.patch` `/Brepro`。
+**应当保留：** patch 补丁前状态；`08.verify` CK dim 符号扫描；worktree cache 精确 key（`worktree-v1-…`）；`04.patch` `/Brepro`。
 
 ## 维护
 

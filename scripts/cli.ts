@@ -5,14 +5,10 @@ import { runToolchainFingerprint } from "./commands/02.toolchain-fingerprint.js"
 import { runPrep } from "./commands/03.prep.js";
 import { runPatch } from "./commands/04.patch.js";
 import { runHipify } from "./commands/05.hipify.js";
-import {
-  runWorktreeStampVerify,
-  runWorktreeStampWrite,
-} from "./commands/06.worktree-stamp.js";
-import { runBuild } from "./commands/07.build.js";
-import { runWheel } from "./commands/08.wheel.js";
-import { runVerify } from "./commands/09.verify.js";
-import { runPublish } from "./commands/10.publish.js";
+import { runBuild } from "./commands/06.build.js";
+import { runWheel } from "./commands/07.wheel.js";
+import { runVerify } from "./commands/08.verify.js";
+import { runPublish } from "./commands/09.publish.js";
 
 const program = new Command();
 
@@ -70,35 +66,7 @@ program
   });
 
 program
-  .command("06.worktree-stamp")
-  .description("写入或校验 patch+hipify+build 后的 worktree stamp")
-  .requiredOption("--pt-src <path>")
-  .requiredOption("-w, --workspace-root <path>")
-  .option("--write", "patch+hipify 完成后写入 stamp")
-  .option("--verify", "worktree cache restore 后校验 stamp")
-  .action((opts) => {
-    if (opts.write && opts.verify) {
-      throw new Error("06.worktree-stamp: use only one of --write or --verify");
-    }
-    if (opts.write) {
-      runWorktreeStampWrite({
-        ptSrc: opts.ptSrc,
-        workspaceRoot: opts.workspaceRoot,
-      });
-      return;
-    }
-    if (opts.verify) {
-      runWorktreeStampVerify({
-        ptSrc: opts.ptSrc,
-        workspaceRoot: opts.workspaceRoot,
-      });
-      return;
-    }
-    throw new Error("06.worktree-stamp: specify --write or --verify");
-  });
-
-program
-  .command("07.build")
+  .command("06.build")
   .description("编译 PyTorch（worktree hit 时 ninja-install，否则 setup.py build）")
   .requiredOption("--pt-src <path>")
   .action((opts) => {
@@ -106,7 +74,7 @@ program
   });
 
 program
-  .command("08.wheel")
+  .command("07.wheel")
   .description("打包 torch wheel（setup.py bdist_wheel）")
   .requiredOption("--pt-src <path>")
   .requiredOption("--dist-dir <path>")
@@ -118,7 +86,7 @@ program
   });
 
 program
-  .command("09.verify")
+  .command("08.verify")
   .description("CPU wheel 冒烟测试")
   .requiredOption("--dist-dir <path>")
   .requiredOption(
@@ -133,7 +101,7 @@ program
   });
 
 program
-  .command("10.publish")
+  .command("09.publish")
   .description("准备 GitHub Release 元数据")
   .requiredOption("--dist-dir <path>")
   .requiredOption("--workflow-name <name>")

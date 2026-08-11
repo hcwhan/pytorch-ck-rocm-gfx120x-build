@@ -50,13 +50,6 @@ runs:
         pt-src: ${{ env.PT_SRC }}
         use-cache: ${{ env.USE_CACHE }}
 
-    - name: Verify restored worktree
-      if: steps.worktree-cache.outputs.cache-used == 'true'
-      shell: pwsh
-      run: |
-        npx tsx scripts/cli.ts 06.worktree-stamp --pt-src $env:PT_SRC -w $env:GITHUB_WORKSPACE --verify
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
     - name: Clone pytorch source
       if: steps.worktree-cache.outputs.cache-used != 'true'
       shell: pwsh
@@ -72,8 +65,6 @@ runs:
         npx tsx scripts/cli.ts 04.patch --pt-src $env:PT_SRC
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         npx tsx scripts/cli.ts 05.hipify --pt-src $env:PT_SRC
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        npx tsx scripts/cli.ts 06.worktree-stamp --pt-src $env:PT_SRC -w $env:GITHUB_WORKSPACE --write
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Export worktree cache used env

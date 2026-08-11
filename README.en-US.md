@@ -69,7 +69,7 @@ Push to `main` does **not** auto-trigger builds.
 
 | Job | Role | Timeout |
 |-----|------|---------|
-| `compile-and-wheel` | bootstrap (toolchain + worktree restore), `07.build` + `08.wheel`, CPU smoke test | 12 h |
+| `compile-and-wheel` | bootstrap (toolchain + worktree restore), `06.build` + `07.wheel`, CPU smoke test | 12 h |
 
 **Worktree cache** (entire `C:\pt\pytorch`: patched source + hipify + `build/`):
 
@@ -79,7 +79,7 @@ Push to `main` does **not** auto-trigger builds.
 - `wheelHash8`: lock `wheel`
 - `pipToolchain`: pip / setuptools / wheel / ninja / packaging / psutil / **cmake**
 - **Exact match only** (no `restore-keys`)
-- **hit**: skip prep / patch / hipify; `07.build` uses **`ninja-install`** (no setup.py/cmake rerun)
+- **hit**: skip prep / patch / hipify; `06.build` uses **`ninja-install`** (no setup.py/cmake rerun)
 - **miss**: prep → patch → hipify → compile → save
 - `use_cache=false`: skip restore (still probes `exists`); save only after a **successful** compile
 
@@ -124,7 +124,7 @@ torch-*+ck.rocm7.14.0.gfx120x*-cp312-cp312-win_amd64.whl
 
 | Check | Script |
 |-------|--------|
-| CI smoke test (CPU) | `npx tsx scripts/cli.ts 09.verify --dist-dir dist --build-caches dist\build-caches.json` |
+| CI smoke test (CPU) | `npx tsx scripts/cli.ts 08.verify --dist-dir dist --build-caches dist\build-caches.json` |
 | Pre-deploy GPU smoke test (gfx120x hardware) | `python test/gpu-smoke-test.py -w .` |
 
 Smoke test covers wheel filename/structure (including CK dim markers), pip install, and `torch.backends.cuda.is_ck_sdpa_available()`. GPU CK SDPA forward pass is in `test/gpu-smoke-test.py` (run manually on gfx120x hardware before deploy).

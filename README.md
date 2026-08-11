@@ -69,7 +69,7 @@
 
 | Job | 作用 | 超时 |
 |-----|------|------|
-| `compile-and-wheel` | bootstrap（toolchain + worktree restore）、`07.build` + `08.wheel`、CPU smoke test | 12 h |
+| `compile-and-wheel` | bootstrap（toolchain + worktree restore）、`06.build` + `07.wheel`、CPU smoke test | 12 h |
 
 **Worktree cache**（整棵 `C:\pt\pytorch`：patch 后源码 + hipify + `build/`）：
 
@@ -79,7 +79,7 @@
 - `wheelHash8`：lock `wheel`
 - `pipToolchain`：pip / setuptools / wheel / ninja / packaging / psutil / **cmake**
 - **仅精确匹配**（无 `restore-keys`）
-- **hit**：跳过 prep / patch / hipify；`07.build` 走 **`ninja-install`**（不 rerun setup.py/cmake）
+- **hit**：跳过 prep / patch / hipify；`06.build` 走 **`ninja-install`**（不 rerun setup.py/cmake）
 - **miss**：prep → patch → hipify → compile → save
 - `use_cache=false`：不 restore（仍 lookup 记录 `exists`）；仅 compile **成功**时 save
 
@@ -128,7 +128,7 @@ torch-*+ck.rocm7.14.0.gfx120x*-cp312-cp312-win_amd64.whl
 
 | 检查 | 脚本 |
 |------|------|
-| CI smoke test（CPU） | `npx tsx scripts/cli.ts 09.verify --dist-dir dist --build-caches dist\build-caches.json` |
+| CI smoke test（CPU） | `npx tsx scripts/cli.ts 08.verify --dist-dir dist --build-caches dist\build-caches.json` |
 | 部署前 GPU smoke test（gfx120x 真机） | `python test/gpu-smoke-test.py -w .` |
 
 Smoke test：wheel 文件名/结构（含 CK dim 符号）→ pip 安装 → 校验 `torch.backends.cuda.is_ck_sdpa_available()`。GPU 上跑 CK SDPA 见 `test/gpu-smoke-test.py`（部署前在真机手动跑）。
