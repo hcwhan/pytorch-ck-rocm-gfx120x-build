@@ -325,11 +325,11 @@ function buildMhaBwdCkStubPoints(): PatchPoint[] {
 
 namespace pytorch_flash {
 
-// SFINAE：兼容较新 composable_kernel fmha_bwd.hpp 与较旧 CK（见 mha_fwd_ck.hip）。`,
+// SFINAE for newer composable_kernel \`fmha_bwd.hpp\` vs older CK (see mha_fwd_ck.hip).`,
       after: `namespace pytorch_flash {
 
 #if 0 // CK FMHA bwd helpers omitted (CK_FMHA_DISABLE_BWD=1)
-// SFINAE：兼容较新 composable_kernel fmha_bwd.hpp 与较旧 CK（见 mha_fwd_ck.hip）。`,
+// SFINAE for newer composable_kernel \`fmha_bwd.hpp\` vs older CK (see mha_fwd_ck.hip).`,
     },
     {
       name: "mha-bwd-ck-close-helper-if0",
@@ -386,11 +386,11 @@ function buildMhaVarlenBwdCkStubPoints(): PatchPoint[] {
 
 namespace pytorch_flash {
 
-// SFINAE：兼容较新 composable_kernel fmha_bwd.hpp 布局与较旧 CK 修订版。`,
+// SFINAE for newer composable_kernel \`fmha_bwd.hpp\` layout vs older CK revisions.`,
       after: `namespace pytorch_flash {
 
 #if 0 // CK FMHA bwd helpers omitted (CK_FMHA_DISABLE_BWD=1)
-// SFINAE：兼容较新 composable_kernel fmha_bwd.hpp 布局与较旧 CK 修订版。`,
+// SFINAE for newer composable_kernel \`fmha_bwd.hpp\` layout vs older CK revisions.`,
     },
     {
       name: "mha-varlen-bwd-ck-close-helper-if0",
