@@ -35,25 +35,30 @@ runs:
       with:
         pt-src: ${{ env.PT_SRC }}
 
-    - name: Clone, patch, and hipify pytorch source
+    - name: Clone pytorch source
       if: inputs.prep-source == 'true'
-      id: prep-source
+      id: prep-clone
       shell: pwsh
       run: |
         git config --global core.longpaths true
         npx tsx scripts/cli.ts 03.prep --pt-src $env:PT_SRC --use-cache
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        npx tsx scripts/cli.ts 04.patch --pt-src $env:PT_SRC
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        npx tsx scripts/cli.ts 04.hipify --pt-src $env:PT_SRC
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Save PT source cache
-      if: inputs.prep-source == 'true' && steps.prep-source.outputs.cloned == 'true'
+      if: inputs.prep-source == 'true' && steps.prep-clone.outputs.cloned == 'true'
       uses: "./.github/actions/A06.pt-src-cache-save"
       with:
         pt-src: ${{ env.PT_SRC }}
         cache-key: ${{ env.PT_SRC_CACHE_KEY }}
+
+    - name: Patch and hipify pytorch source
+      if: inputs.prep-source == 'true'
+      shell: pwsh
+      run: |
+        npx tsx scripts/cli.ts 04.patch --pt-src $env:PT_SRC
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        npx tsx scripts/cli.ts 04.hipify --pt-src $env:PT_SRC
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Setup ROCm toolchain
       if: inputs.setup-toolchain == 'true'

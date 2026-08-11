@@ -1,5 +1,5 @@
 name: Save PT source cache
-description: 保存 PyTorch prep 源码树（含 submodule 与 .pt-prep-stamp.json）
+description: 保存 clone 后、patch 前的 PyTorch 源码树（含 submodule 与 .pt-prep-stamp.json）
 
 inputs:
   pt-src:

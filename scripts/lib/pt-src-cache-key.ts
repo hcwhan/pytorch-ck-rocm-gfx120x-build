@@ -5,5 +5,5 @@ export function buildPtSrcCacheKey(repo: string, buildCommit: string): string {
     .update(`${repo}\0${buildCommit}`, "utf8")
     .digest("hex")
     .slice(0, 8);
-  return `pt-src-v1-${digest}`;
+  return `pt-src-v2-${digest}`;
 }
