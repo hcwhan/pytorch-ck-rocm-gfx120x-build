@@ -8,18 +8,21 @@ inputs:
   cache-key:
     description: Primary cache key from 05.toolchain-fingerprint
     required: true
-  skip-cache:
-    description: When true, skip cache restore and save (cold build)
+  use-cache:
+    description: When true, restore build/ from cache when it exists; when false, lookup-only
     required: false
-    default: "false"
+    default: "true"
   run:
     description: Shell script executed between cache restore and save
     required: true
 
 outputs:
-  cache-hit:
-    description: Exact cache key match from restore
-    value: ${{ steps.pt-build-cache.outputs.cache-hit }}
+  cache-exists:
+    description: Remote cache entry exists for cache-primary-key
+    value: ${{ steps.pt-build-cache.outputs.cache-exists }}
+  cache-used:
+    description: Cache was restored into build/
+    value: ${{ steps.pt-build-cache.outputs.cache-used }}
 
 runs:
   using: composite
@@ -30,7 +33,7 @@ runs:
       with:
         pt-src: ${{ inputs.pt-src }}
         cache-key: ${{ inputs.cache-key }}
-        skip-cache: ${{ inputs.skip-cache }}
+        use-cache: ${{ inputs.use-cache }}
 
     - name: Run build CLI step
       id: run-build
@@ -38,7 +41,10 @@ runs:
       run: ${{ inputs.run }}
 
     - name: Delete stale ninja cache entry
-      if: always() && inputs.skip-cache != 'true' && steps.run-build.conclusion != 'skipped' && steps.pt-build-cache.outputs.cache-hit == 'true'
+      # Delete when cache-exists so save can refresh (actions/cache/save fails on an
+      # existing key). use-cache=true: delete on success or failure (partial save).
+      # use-cache=false: delete only on success (lookup-only cold build refresh path).
+      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && steps.pt-build-cache.outputs.cache-exists == 'true'
       shell: pwsh
       env:
         GH_TOKEN: ${{ github.token }}
@@ -52,7 +58,7 @@ runs:
         }
 
     - name: Save ninja incremental build cache
-      if: always() && inputs.skip-cache != 'true' && steps.run-build.conclusion != 'skipped'
+      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success')
       uses: "./.github/actions/A04.pt-ninja-cache-save"
       with:
         pt-src: ${{ inputs.pt-src }}

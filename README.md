@@ -62,7 +62,7 @@
 | 输入 | 默认 | 说明 |
 |------|------|------|
 | `ninja_workers` | `4` | Ninja 并行 worker 数（OOM 时可改为 `2`） |
-| `skip_cache` | `false` | 设为 `true` 时跳过 ninja cache 的 restore 与 save（全量冷编译） |
+| `use_cache` | `true` | 设为 `false` 时不 restore（仍 lookup 探测 `exists`；`used=false`；仅 compile 成功时 save） |
 | `publish_release` | `true` | 设为 `false` 时跳过 GitHub Release 上传 |
 
 ### 串行（`build-pytorch-ck-gfx120x-serial.yml`）
@@ -71,7 +71,7 @@
 |-----|------|------|
 | `compile-and-wheel` | clone+patch、toolchain、ninja cache、`06.build` + `08.wheel`、CPU smoke test | 12 h |
 
-- Cache key 含 `VERSION.lock.json` SHA256 前 8 位（`torch-ck-gfx120x-serial-v2-{lockHash8}-`）及三段工具链指纹（MSVC 工具集 / ROCm clang / pip 工具链）；**仅精确匹配**（无 `restore-keys`）。
+- Cache key 含 `VERSION.lock.json` SHA256 前 8 位（`torch-ck-gfx120x-serial-v2-{lockHash8}-`）及三段工具链指纹（MSVC 工具集 / ROCm clang / pip 工具链）；**仅精确匹配**（无 `restore-keys`）。`use_cache=false` 时不 restore（`used=false`），compile 成功后仍 save。
 
 ### 构建阶段
 

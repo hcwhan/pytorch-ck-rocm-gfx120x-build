@@ -19,8 +19,10 @@
 | lock CK codegen 目标 | `CK_TARGETS` | 由 `compile.gpu_archs` 经 `gpu-archs.ts` 推导（如 `gfx1200;gfx1201` → `--targets gfx12`）；`04.patch` 只读 env |
 | lock CK OPT_DIM | `CK_OPT_DIM` | lock `compile.ck_opt_dim` 逗号列表；`04.patch` 只读 env |
 | lock CK bwd | `CK_FMHA_DISABLE_BWD` | lock `compile.ck_disable_bwd`（`true` = 推理专用，跳过 bwd codegen / fav_v3 / `FLASHATTENTION_DISABLE_BACKWARD`） |
-| Ninja cache key | `cache-key` | 05.toolchain-fingerprint output → A03.pt-build-with-cache input |
-| Compile cache metadata | `--build-caches` | workflow 写入 `dist/build-caches.json` → 09.verify → manifest `build_caches` |
+| Ninja cache key | `cache-key` | 05.toolchain-fingerprint output → A03.pt-build-with-cache input / manifest `build_caches[].key` |
+| Ninja cache exists | `cache-exists` | A02/A03 output / manifest `build_caches[].exists` |
+| Ninja cache used | `cache-used` | A02/A03 output / manifest `build_caches[].used`（`use_cache=true` 且 restore 命中） |
+| Compile cache metadata | `--build-caches` | workflow 写入 `dist/build-caches.json` → 09.verify → manifest `build_caches`（`opt_dim/key/exists/used`） |
 | wheel local tag | `WHEEL_LOCAL_VERSION` | lock `wheel.wheel_local_version` |
 | PT 相关 env | `PYTORCH_*` | repo / commit / force-build 等 |
 
@@ -77,8 +79,8 @@
 - **patch 程序化**（`04.patch.ts`）；`CK_OPT_DIM` / `GPU_ARCHS` / `CK_TARGETS` / `CK_FMHA_DISABLE_BWD` 只从 env 取（`CK_TARGETS` 由 lock `gpu_archs` 推导）
 - **ComfyUI 推理 wheel 默认 `compile.ck_disable_bwd=true`**（fwd-only CK FMHA；调用 backward 运行时 `TORCH_CHECK`）
 - **`/Brepro` + `SOURCE_DATE_EPOCH`**：固定 PE TimeDateStamp 与 wheel zip 时间戳（`/Brepro` 仅追加到 `CMAKE_SHARED_LINKER_FLAGS` / `CMAKE_EXE_LINKER_FLAGS`，不作用于 `llvm-lib` 静态库链接）
-- **`ninja_workers` 默认 4**；**`skip_cache` 默认 false**（`true` 时不 restore 也不 save）
-- **ninja cache save**：只要 build 跑过（非 skipped）即 save；`cache-hit` 时 save 前先 delete 旧条目
+- **`ninja_workers` 默认 4**；**`use_cache` 默认 true**（false 时 lookup-only：`cache-exists` 仍探测，`cache-used=false`）
+- **ninja cache save**：`use_cache=true` 时 build 非 skipped 即 save；**`use_cache=false` 时仅 success save**；`cache-exists` 时 save 前先 delete
 - smoke test 在 CPU runner 上验证 wheel CK dim 符号 + `is_ck_sdpa_available()`（不跑 GPU kernel）
 
 ## 编写规范

@@ -8,15 +8,18 @@ inputs:
   cache-key:
     description: Primary cache key from 05.toolchain-fingerprint
     required: true
-  skip-cache:
-    description: When true, skip cache restore (cache-primary-key still resolved; save skipped by A03)
+  use-cache:
+    description: When true, restore build/ from cache when it exists; when false, lookup-only (cache-exists still reported)
     required: false
-    default: "false"
+    default: "true"
 
 outputs:
-  cache-hit:
-    description: Exact cache key match
-    value: ${{ steps.pt-build-cache.outputs.cache-hit }}
+  cache-exists:
+    description: Remote cache entry exists for cache-primary-key
+    value: ${{ steps.pt-build-cache.outputs.cache-exists }}
+  cache-used:
+    description: Cache was restored into build/ (use-cache and cache-exists)
+    value: ${{ steps.pt-build-cache.outputs.cache-used }}
   cache-primary-key:
     description: Resolved primary cache key
     value: ${{ steps.pt-build-cache.outputs.cache-primary-key }}
@@ -25,22 +28,36 @@ runs:
   using: composite
   steps:
     - name: Restore ninja incremental build cache
-      if: inputs.skip-cache != 'true'
+      if: inputs.use-cache == 'true'
       uses: actions/cache/restore@v6
       id: cache-restore
       with:
         path: ${{ inputs.pt-src }}\build
         key: ${{ inputs.cache-key }}
 
+    - name: Lookup cache existence (restore skipped)
+      if: inputs.use-cache != 'true'
+      uses: actions/cache/restore@v6
+      id: cache-lookup
+      with:
+        path: ${{ inputs.pt-src }}\build
+        key: ${{ inputs.cache-key }}
+        lookup-only: true
+
     - name: Resolve cache restore outputs
       id: pt-build-cache
       shell: pwsh
       run: |
-        if ('${{ inputs.skip-cache }}' -eq 'true') {
-          Write-Host "Cache disabled by workflow input; skipping restore"
-          "cache-primary-key=${{ inputs.cache-key }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "cache-hit=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-        } else {
+        if ('${{ inputs.use-cache }}' -eq 'true') {
+          $exists = '${{ steps.cache-restore.outputs.cache-hit }}' -eq 'true'
+          Write-Host "Cache restore: exists=$exists used=$exists"
           "cache-primary-key=${{ steps.cache-restore.outputs.cache-primary-key }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "cache-hit=${{ steps.cache-restore.outputs.cache-hit }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "cache-exists=$exists" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "cache-used=$exists" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        } else {
+          $exists = '${{ steps.cache-lookup.outputs.cache-hit }}' -eq 'true'
+          Write-Host "Cache restore skipped; lookup exists=$exists used=false"
+          "cache-primary-key=${{ inputs.cache-key }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "cache-exists=$exists" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "cache-used=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
         }

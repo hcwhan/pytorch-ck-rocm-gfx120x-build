@@ -132,10 +132,10 @@ function matchesGlob(name: string, pattern: string): boolean {
 
 function readWorkflowDispatch(): {
   ninja_workers: number;
-  skip_cache: boolean;
+  use_cache: boolean;
 } {
   const maxJobs = requireGithubActionsEnv("MAX_JOBS");
-  const skipCache = requireGithubActionsEnv("SKIP_CACHE");
+  const useCache = requireGithubActionsEnv("USE_CACHE");
   const ninjaWorkers = Number(maxJobs);
   if (
     !Number.isFinite(ninjaWorkers) ||
@@ -144,14 +144,14 @@ function readWorkflowDispatch(): {
   ) {
     throw new Error(`MAX_JOBS must be a positive integer, got ${maxJobs}`);
   }
-  if (skipCache !== "true" && skipCache !== "false") {
+  if (useCache !== "true" && useCache !== "false") {
     throw new Error(
-      `SKIP_CACHE must be 'true' or 'false', got ${skipCache}`,
+      `USE_CACHE must be 'true' or 'false', got ${useCache}`,
     );
   }
   return {
     ninja_workers: ninjaWorkers,
-    skip_cache: skipCache === "true",
+    use_cache: useCache === "true",
   };
 }
 

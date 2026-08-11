@@ -62,7 +62,7 @@ Push to `main` does **not** auto-trigger builds.
 | Input | Default | Description |
 |-------|---------|-------------|
 | `ninja_workers` | `4` | Ninja parallel workers (use `2` if OOM) |
-| `skip_cache` | `false` | Set `true` to skip ninja cache restore and save (cold build) |
+| `use_cache` | `true` | Set `false` to skip restore (still probes `exists`; `used=false`; save only after a successful compile) |
 | `publish_release` | `true` | Set `false` to skip GitHub Release upload |
 
 ### Serial (`build-pytorch-ck-gfx120x-serial.yml`)
@@ -71,7 +71,7 @@ Push to `main` does **not** auto-trigger builds.
 |-----|------|---------|
 | `compile-and-wheel` | clone+patch, toolchain, ninja cache, `06.build` + `08.wheel`, CPU smoke test | 12 h |
 
-Cache keys include `VERSION.lock.json` SHA256 prefix (`torch-ck-gfx120x-serial-v2-{lockHash8}-`) and three toolchain fingerprints (MSVC toolset / ROCm clang / pip toolchain); **exact match only** (no `restore-keys`).
+Cache keys include `VERSION.lock.json` SHA256 prefix (`torch-ck-gfx120x-serial-v2-{lockHash8}-`) and three toolchain fingerprints (MSVC toolset / ROCm clang / pip toolchain); **exact match only** (no `restore-keys`). `use_cache=false` skips restore (`used=false`); cache is still saved after a successful compile.
 
 ### Build stages
 

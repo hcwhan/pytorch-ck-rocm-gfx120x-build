@@ -7,11 +7,11 @@ on:
         description: "Ninja parallel compile workers (use 2 if OOM)"
         required: false
         default: "4"
-      skip_cache:
-        description: "Skip ninja cache restore and save (cold build)"
+      use_cache:
+        description: "Restore ninja cache into build/ when a matching entry exists (lookup-only when false)"
         type: boolean
         required: false
-        default: false
+        default: true
       publish_release:
         description: "Upload wheel to GitHub Releases after successful build"
         type: boolean
@@ -29,7 +29,7 @@ permissions:
 env:
   MAX_JOBS: ${{ github.event.inputs.ninja_workers }}
   PT_SRC: C:\pt\pytorch
-  SKIP_CACHE: ${{ github.event.inputs.skip_cache != 'false' && 'true' || 'false' }}
+  USE_CACHE: ${{ github.event.inputs.use_cache != 'false' && 'true' || 'false' }}
 
 jobs:
   compile-and-wheel:
@@ -54,7 +54,7 @@ jobs:
         with:
           pt-src: ${{ env.PT_SRC }}
           cache-key: ${{ steps.toolchain-fingerprint.outputs.cache-key }}
-          skip-cache: ${{ env.SKIP_CACHE }}
+          use-cache: ${{ env.USE_CACHE }}
           run: npx tsx scripts/cli.ts 06.build --pt-src $env:PT_SRC
 
       - name: Write compile cache metadata
@@ -63,7 +63,8 @@ jobs:
           $entry = [ordered]@{
             opt_dim = $env:CK_OPT_DIM
             key = '${{ steps.toolchain-fingerprint.outputs.cache-key }}'
-            hit = '${{ steps.compile.outputs.cache-hit }}' -eq 'true'
+            exists = '${{ steps.compile.outputs.cache-exists }}' -eq 'true'
+            used = '${{ steps.compile.outputs.cache-used }}' -eq 'true'
           }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           $entry | ConvertTo-Json -Depth 3 -AsArray | Out-File -FilePath dist/build-caches.json -Encoding utf8
