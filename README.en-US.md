@@ -101,10 +101,10 @@ gh release list
 gh release download torch-ck-cp312-rocm7.14.0-gfx120x-serial-build123 -D .\dist
 ```
 
-Expected wheel name (derived from `wheel.wheel_local_version` + `toolchain.python`):
+Expected wheel name (derived from `wheel.wheel_local_version` + `toolchain.python`; PEP 440 normalizes `-` to `.` in the local tag):
 
 ```text
-torch-*+ck-rocm7.14.0-gfx120x*-cp312-cp312-win_amd64.whl
+torch-*+ck.rocm7.14.0.gfx120x*-cp312-cp312-win_amd64.whl
 ```
 
 ## Verification

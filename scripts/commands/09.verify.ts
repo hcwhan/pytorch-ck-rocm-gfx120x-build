@@ -31,17 +31,21 @@ ck_disable_bwd = sys.argv[4]
 min_pyd_bytes = 512 * 1024
 min_ck_binary_bytes = 64 * 1024
 
+def wheel_filename_local(local: str) -> str:
+    return local.replace('-', '.').replace('_', '.')
+
 opt_dims = [int(part) for part in ck_opt_dim.split(',') if part.strip()]
 if not opt_dims:
     raise SystemExit('ERROR: CK_OPT_DIM is missing or empty')
 
 wheel_name = Path(wheel).name
-local_tag = f'+{expected_local}'
+filename_local = wheel_filename_local(expected_local)
+local_tag = f'+{filename_local}'
 if local_tag not in wheel_name:
     raise SystemExit(
         f'ERROR: wheel filename missing local version tag {local_tag!r}: {wheel_name}'
     )
-print(f'OK wheel local tag {expected_local}')
+print(f'OK wheel local tag {filename_local}')
 
 with zipfile.ZipFile(wheel) as zf:
     names = zf.namelist()
@@ -255,9 +259,12 @@ export function runVerify(options: {
     [
       "import sys",
       "import torch",
+      "def wheel_filename_local(local: str) -> str:",
+      "    return local.replace('-', '.').replace('_', '.')",
       "expected_local = sys.argv[1]",
       "expected_rocm = sys.argv[2]",
-      "local_tag = f'+{expected_local}'",
+      "filename_local = wheel_filename_local(expected_local)",
+      "local_tag = f'+{filename_local}'",
       "if local_tag not in torch.__version__:",
       "    raise SystemExit(",
       "        f'ERROR: torch version missing local tag {local_tag!r}: {torch.__version__!r}'",

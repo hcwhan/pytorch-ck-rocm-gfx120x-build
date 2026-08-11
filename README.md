@@ -105,10 +105,10 @@ gh release list
 gh release download torch-ck-cp312-rocm7.14.0-gfx120x-serial-build123 -D .\dist
 ```
 
-预期 wheel 文件名（由 `wheel.wheel_local_version` + `toolchain.python` 推导）：
+预期 wheel 文件名（由 `wheel.wheel_local_version` + `toolchain.python` 推导；PEP 440 将 local tag 中的 `-` 规范化为 `.`）：
 
 ```text
-torch-*+ck-rocm7.14.0-gfx120x*-cp312-cp312-win_amd64.whl
+torch-*+ck.rocm7.14.0.gfx120x*-cp312-cp312-win_amd64.whl
 ```
 
 ## 验证
