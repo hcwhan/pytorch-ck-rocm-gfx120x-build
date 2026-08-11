@@ -1,9 +1,28 @@
 import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { run, runCapture } from "../lib/exec.js";
+import { appendGithubOutput } from "../lib/github.js";
+import {
+  isPreparedSourceTree,
+  readPrepStamp,
+  verifyPrepStampAgainstLock,
+  writePrepStamp,
+} from "../lib/pt-prep-stamp.js";
 import { requireLockEnv } from "../lib/require-env.js";
 
-export function runPrep(options: { ptSrc: string }): void {
+function configureGitFetchParallelism(): void {
+  run("git", ["config", "--global", "fetch.parallel", "0"]);
+  run("git", ["config", "--global", "submodule.fetchJobs", "0"]);
+}
+
+function maybeAppendPrepOutput(cloned: boolean): void {
+  if (!process.env.GITHUB_OUTPUT) {
+    return;
+  }
+  appendGithubOutput({ cloned: cloned ? "true" : "false" });
+}
+
+export function runPrep(options: { ptSrc: string; useCache?: boolean }): void {
   const pytorchRepo = requireLockEnv("PYTORCH_REPO");
   const pytorchBuildCommit = requireLockEnv("PYTORCH_BUILD_COMMIT");
   const pytorchBuildCommitDate = requireLockEnv("PYTORCH_BUILD_COMMIT_DATE");
@@ -11,6 +30,32 @@ export function runPrep(options: { ptSrc: string }): void {
 
   console.log(`Using pytorch repo: ${pytorchRepo}`);
   console.log(`Using pytorch build ref: ${pytorchBuildCommit}`);
+
+  if (options.useCache) {
+    const stamp = readPrepStamp(root);
+    if (
+      stamp &&
+      verifyPrepStampAgainstLock(stamp, {
+        repo: pytorchRepo,
+        buildCommit: pytorchBuildCommit,
+        buildCommitDate: pytorchBuildCommitDate,
+      }) &&
+      isPreparedSourceTree(root)
+    ) {
+      console.log(
+        `Prep stamp valid, skipping clone (commit=${stamp.resolved_commit})`,
+      );
+      maybeAppendPrepOutput(false);
+      return;
+    }
+    if (stamp) {
+      console.log(
+        "Prep stamp invalid or lock mismatch; re-cloning pytorch source",
+      );
+    }
+  }
+
+  configureGitFetchParallelism();
 
   const parent = path.dirname(root);
   mkdirSync(parent, { recursive: true });
@@ -57,6 +102,7 @@ export function runPrep(options: { ptSrc: string }): void {
     "--recursive",
     "--depth",
     "1",
+    "--filter=blob:none",
   ]);
 
   const resolvedCommit = runCapture("git", [
@@ -105,9 +151,17 @@ export function runPrep(options: { ptSrc: string }): void {
     `Commit author date OK: ${gitAuthorDate} (lock=${pytorchBuildCommitDate})`,
   );
 
+  writePrepStamp(root, {
+    repo: pytorchRepo,
+    build_commit: pytorchBuildCommit,
+    build_commit_date: pytorchBuildCommitDate,
+    resolved_commit: resolvedCommit,
+  });
+
   rmSync(path.join(root, ".git"), { recursive: true, force: true });
 
   console.log(
     `Prepared pytorch at ${root} (ref=${pytorchBuildCommit}, commit=${resolvedCommit})`,
   );
+  maybeAppendPrepOutput(true);
 }

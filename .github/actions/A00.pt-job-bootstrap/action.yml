@@ -28,17 +28,32 @@ runs:
       shell: pwsh
       run: npx tsx scripts/cli.ts 01.config -w $env:GITHUB_WORKSPACE --export-github-env
 
+    - name: Restore PT source cache
+      if: inputs.prep-source == 'true'
+      id: pt-src-cache
+      uses: "./.github/actions/A05.pt-src-cache-restore"
+      with:
+        pt-src: ${{ env.PT_SRC }}
+
     - name: Clone, patch, and hipify pytorch source
       if: inputs.prep-source == 'true'
+      id: prep-source
       shell: pwsh
       run: |
         git config --global core.longpaths true
-        npx tsx scripts/cli.ts 03.prep --pt-src $env:PT_SRC
+        npx tsx scripts/cli.ts 03.prep --pt-src $env:PT_SRC --use-cache
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         npx tsx scripts/cli.ts 04.patch --pt-src $env:PT_SRC
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         npx tsx scripts/cli.ts 04.hipify --pt-src $env:PT_SRC
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    - name: Save PT source cache
+      if: inputs.prep-source == 'true' && steps.prep-source.outputs.cloned == 'true'
+      uses: "./.github/actions/A06.pt-src-cache-save"
+      with:
+        pt-src: ${{ env.PT_SRC }}
+        cache-key: ${{ env.PT_SRC_CACHE_KEY }}
 
     - name: Setup ROCm toolchain
       if: inputs.setup-toolchain == 'true'

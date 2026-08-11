@@ -1,0 +1,20 @@
+name: Save PT source cache
+description: 保存 PyTorch prep 源码树（含 submodule 与 .pt-prep-stamp.json）
+
+inputs:
+  pt-src:
+    description: PyTorch 源码根目录
+    required: true
+  cache-key:
+    description: PT_SRC_CACHE_KEY（与 A05 restore 相同）
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Save PT source cache
+      if: inputs.cache-key != ''
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ inputs.pt-src }}
+        key: ${{ inputs.cache-key }}

@@ -30,8 +30,9 @@ program
   .command("03.prep")
   .description("按 pin 的 SHA 或 tag clone PyTorch 源码")
   .requiredOption("--pt-src <path>")
+  .option("--use-cache", "命中 prep stamp 时跳过 clone")
   .action((opts) => {
-    runPrep({ ptSrc: opts.ptSrc });
+    runPrep({ ptSrc: opts.ptSrc, useCache: Boolean(opts.useCache) });
   });
 
 program

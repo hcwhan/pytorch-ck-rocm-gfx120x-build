@@ -4,6 +4,7 @@ import path from "node:path";
 import { z } from "zod";
 import { formatCkTargetsFlag } from "./gpu-archs.js";
 import { buildPipToolchainCacheKey } from "./pip-cache-key.js";
+import { buildPtSrcCacheKey } from "./pt-src-cache-key.js";
 
 const gitShaSchema = z
   .string()
@@ -58,6 +59,7 @@ export type VersionLockVars = {
   PYTORCH_REPO: string;
   PYTORCH_BUILD_COMMIT: string;
   PYTORCH_BUILD_COMMIT_DATE: string;
+  PT_SRC_CACHE_KEY: string;
   SOURCE_DATE_EPOCH: string;
   WHEEL_ARTIFACT_NAME: string;
   EXPECTED_WHEEL_PATTERN: string;
@@ -173,6 +175,10 @@ export function readVersionLock(workspaceRoot: string): VersionLockVars {
     PYTORCH_REPO: lock.pytorch.repo,
     PYTORCH_BUILD_COMMIT: lock.pytorch.build_commit,
     PYTORCH_BUILD_COMMIT_DATE: isoUtc,
+    PT_SRC_CACHE_KEY: buildPtSrcCacheKey(
+      lock.pytorch.repo,
+      lock.pytorch.build_commit,
+    ),
     SOURCE_DATE_EPOCH: String(epochSeconds),
     WHEEL_ARTIFACT_NAME: lock.wheel.wheel_artifact_name,
     EXPECTED_WHEEL_PATTERN: expectedWheelPattern(

@@ -28,7 +28,7 @@
 
 **缩写对照：** 仓库 `pytorch-ck-rocm-gfx120x-build`；ninja cache 前缀 `torch-ck-gfx120x-serial-v2-{lockHash8}`；release tag / artifact 前缀见 lock `release_tag_prefix` / `wheel_artifact_name`（当前 `torch-ck-cp312-rocm7.14.0-gfx120x`）。
 
-**lock → GITHUB_ENV 映射：** `toolchain.python`→`PYTHON_VERSION`，`toolchain.rocm`→`ROCM_VERSION`，`toolchain.rocm_index`→`ROCM_INDEX`，`compile.gpu_archs`→`GPU_ARCHS`，`compile.gpu_archs`→`CK_TARGETS`（推导），`compile.ck_opt_dim`→`CK_OPT_DIM`，`compile.ck_disable_bwd`→`CK_FMHA_DISABLE_BWD`，`pytorch.repo`→`PYTORCH_REPO`，`pytorch.build_commit`→`PYTORCH_BUILD_COMMIT`，`pytorch.build_commit_date`→`PYTORCH_BUILD_COMMIT_DATE`（另导出 `SOURCE_DATE_EPOCH`），`wheel.wheel_local_version`→`WHEEL_LOCAL_VERSION`，`wheel.wheel_artifact_name`→`WHEEL_ARTIFACT_NAME`，`release.release_tag_prefix`→`RELEASE_TAG_PREFIX`，`release.release_title_prefix`→`RELEASE_TITLE_PREFIX`；`EXPECTED_WHEEL_PATTERN` / `PIP_TOOLCHAIN_CACHE_KEY` 由 `version-lock.ts` 推导。
+**lock → GITHUB_ENV 映射：** `toolchain.python`→`PYTHON_VERSION`，`toolchain.rocm`→`ROCM_VERSION`，`toolchain.rocm_index`→`ROCM_INDEX`，`compile.gpu_archs`→`GPU_ARCHS`，`compile.gpu_archs`→`CK_TARGETS`（推导），`compile.ck_opt_dim`→`CK_OPT_DIM`，`compile.ck_disable_bwd`→`CK_FMHA_DISABLE_BWD`，`pytorch.repo`→`PYTORCH_REPO`，`pytorch.build_commit`→`PYTORCH_BUILD_COMMIT`，`pytorch.build_commit_date`→`PYTORCH_BUILD_COMMIT_DATE`（另导出 `SOURCE_DATE_EPOCH`），`pytorch.repo`+`pytorch.build_commit`→`PT_SRC_CACHE_KEY`（`pt-src-v1-{hash8}`），`wheel.wheel_local_version`→`WHEEL_LOCAL_VERSION`，`wheel.wheel_artifact_name`→`WHEEL_ARTIFACT_NAME`，`release.release_tag_prefix`→`RELEASE_TAG_PREFIX`，`release.release_title_prefix`→`RELEASE_TITLE_PREFIX`；`EXPECTED_WHEEL_PATTERN` / `PIP_TOOLCHAIN_CACHE_KEY` 由 `version-lock.ts` 推导。
 
 ## 复用入口
 
@@ -43,7 +43,7 @@
 | `scripts/lib/rocm-sdk-paths.ts` | ROCm SDK 路径（唯一路径发现） |
 | `scripts/lib/init-build-env.ts` | ROCm 编译 env（含 `USE_KINETO=0`；Windows 无 rocprofiler）；`installRequirements` 默认 true（仅 `06.build`） |
 | `01.config` | 读 lock；`--export-github-env` 写 CI env |
-| `03.prep` | clone PyTorch + 浅 submodule |
+| `03.prep` | clone PyTorch + 浅 submodule；`--use-cache` 校验 `.pt-prep-stamp.json` 后跳过 clone |
 | `04.patch` | Windows CK SDPA + gfx120x 程序化补丁 + MSVC `/Brepro`（仅 shared/exe 链接器，避开 llvm-lib 静态库）；`CK_FMHA_DISABLE_BWD=1` 时省略 bwd codegen/fav_v3、GLOB 排除 `fmha_bwd` blob、**就地 patch** upstream bwd wrapper 并设 `FLASHATTENTION_DISABLE_BACKWARD`；否则完整 bwd；`CK_FMHA_GENERATE` 用 `${Python3_EXECUTABLE}`；部署 `add_make_kernel_pt.py` + `.cpp→.hip` CMake `file(RENAME)` + CK emit 独立 `RESULT_VARIABLE` |
 | `04.hipify` | `tools/amd_build/build_amd.py`（生成 `c10/hip/`、`THH/` 等 ROCm 源码） |
 | `05.toolchain-fingerprint` | MSVC/clang + pip 指纹；`-w` 输出 `cache-key` |
@@ -68,6 +68,8 @@
 | `A02.pt-ninja-cache-restore` | 恢复 ninja 增量缓存 |
 | `A03.pt-build-with-cache` | A02 + 编译 + A04 |
 | `A04.pt-ninja-cache-save` | 保存 ninja 增量缓存 |
+| `A05.pt-src-cache-restore` | 恢复 prep 源码树（`PT_SRC_CACHE_KEY` 精确匹配） |
+| `A06.pt-src-cache-save` | 保存 prep 源码树（仅 `03.prep` 实际 clone 时） |
 | `A99.pt-verify-publish` | `09.verify` + artifact + 可选 Release |
 
 ## 设计决策
