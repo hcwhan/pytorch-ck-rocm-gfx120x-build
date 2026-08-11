@@ -69,17 +69,17 @@ Push to `main` does **not** auto-trigger builds.
 
 | Job | Role | Timeout |
 |-----|------|---------|
-| `compile-and-wheel` | bootstrap (toolchain + worktree restore), `06.build` + `08.wheel`, CPU smoke test | 12 h |
+| `compile-and-wheel` | bootstrap (toolchain + worktree restore), `07.build` + `08.wheel`, CPU smoke test | 12 h |
 
 **Worktree cache** (entire `C:\pt\pytorch`: patched source + hipify + `build/`):
 
 - Key: `worktree-v1-{lockHash8}-{patchHash8}-{wheelHash8}-msvc{…}-rocmClang{…}-pipToolchain{…}`
 - `lockHash8`: lock `toolchain` + `pytorch` + `compile`
-- `patchHash8`: `04.patch.ts`, `04.hipify.ts`, `gpu-archs.ts`, `add-make-kernel-pt.py`
+- `patchHash8`: `04.patch.ts`, `05.hipify.ts`, `gpu-archs.ts`, `add-make-kernel-pt.py`
 - `wheelHash8`: lock `wheel`
 - `pipToolchain`: pip / setuptools / wheel / ninja / packaging / psutil / **cmake**
 - **Exact match only** (no `restore-keys`)
-- **hit**: skip prep / patch / hipify; `06.build` uses **`ninja-install`** (no setup.py/cmake rerun)
+- **hit**: skip prep / patch / hipify; `07.build` uses **`ninja-install`** (no setup.py/cmake rerun)
 - **miss**: prep → patch → hipify → compile → save
 - `use_cache=false`: skip restore (still probes `exists`); save only after a **successful** compile
 

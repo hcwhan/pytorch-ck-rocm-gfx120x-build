@@ -51,7 +51,7 @@ jobs:
           cache-key: ${{ env.WORKTREE_CACHE_KEY }}
           cache-exists: ${{ steps.bootstrap.outputs.worktree-cache-exists }}
           use-cache: ${{ env.USE_CACHE }}
-          run: npx tsx scripts/cli.ts 06.build --pt-src $env:PT_SRC
+          run: npx tsx scripts/cli.ts 07.build --pt-src $env:PT_SRC
 
       - name: Write compile cache metadata
         shell: pwsh

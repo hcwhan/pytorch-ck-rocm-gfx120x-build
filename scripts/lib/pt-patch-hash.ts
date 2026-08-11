@@ -5,7 +5,7 @@ import path from "node:path";
 /** patch / hipify / codegen 脚本变更会使 worktree cache 失效。 */
 const PATCH_INPUT_PATHS = [
   "scripts/commands/04.patch.ts",
-  "scripts/commands/04.hipify.ts",
+  "scripts/commands/05.hipify.ts",
   "scripts/lib/gpu-archs.ts",
   "build/add-make-kernel-pt.py",
 ] as const;

@@ -37,7 +37,7 @@ runs:
     - name: Fingerprint worktree cache key
       shell: pwsh
       run: |
-        npx tsx scripts/cli.ts 05.toolchain-fingerprint -w $env:GITHUB_WORKSPACE --export-github-env
+        npx tsx scripts/cli.ts 02.toolchain-fingerprint -w $env:GITHUB_WORKSPACE --export-github-env
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Restore ccache
@@ -54,7 +54,7 @@ runs:
       if: steps.worktree-cache.outputs.cache-used == 'true'
       shell: pwsh
       run: |
-        npx tsx scripts/cli.ts 03.worktree-stamp --pt-src $env:PT_SRC -w $env:GITHUB_WORKSPACE --verify
+        npx tsx scripts/cli.ts 06.worktree-stamp --pt-src $env:PT_SRC -w $env:GITHUB_WORKSPACE --verify
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Clone pytorch source
@@ -71,9 +71,9 @@ runs:
       run: |
         npx tsx scripts/cli.ts 04.patch --pt-src $env:PT_SRC
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        npx tsx scripts/cli.ts 04.hipify --pt-src $env:PT_SRC
+        npx tsx scripts/cli.ts 05.hipify --pt-src $env:PT_SRC
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        npx tsx scripts/cli.ts 03.worktree-stamp --pt-src $env:PT_SRC -w $env:GITHUB_WORKSPACE --write
+        npx tsx scripts/cli.ts 06.worktree-stamp --pt-src $env:PT_SRC -w $env:GITHUB_WORKSPACE --write
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Export worktree cache used env

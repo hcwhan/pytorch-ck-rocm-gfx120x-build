@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { runConfig } from "./commands/01.config.js";
+import { runToolchainFingerprint } from "./commands/02.toolchain-fingerprint.js";
 import { runPrep } from "./commands/03.prep.js";
+import { runPatch } from "./commands/04.patch.js";
+import { runHipify } from "./commands/05.hipify.js";
 import {
   runWorktreeStampVerify,
   runWorktreeStampWrite,
-} from "./commands/03.worktree-stamp.js";
-import { runPatch } from "./commands/04.patch.js";
-import { runHipify } from "./commands/04.hipify.js";
-import { runToolchainFingerprint } from "./commands/05.toolchain-fingerprint.js";
-import { runBuild } from "./commands/06.build.js";
+} from "./commands/06.worktree-stamp.js";
+import { runBuild } from "./commands/07.build.js";
 import { runWheel } from "./commands/08.wheel.js";
 import { runVerify } from "./commands/09.verify.js";
 import { runPublish } from "./commands/10.publish.js";
@@ -31,6 +31,21 @@ program
   });
 
 program
+  .command("02.toolchain-fingerprint")
+  .description("输出 worktree / ccache key（lock+patch+wheel+toolchain 指纹）")
+  .option("-w, --workspace-root <path>", "仓库根目录（输出 cache-key）")
+  .option(
+    "--export-github-env",
+    "将 WORKTREE_CACHE_KEY / CCACHE_CACHE_KEY 追加到 GITHUB_ENV",
+  )
+  .action((opts) => {
+    runToolchainFingerprint({
+      workspaceRoot: opts.workspaceRoot,
+      exportGithubEnv: Boolean(opts.exportGithubEnv),
+    });
+  });
+
+program
   .command("03.prep")
   .description("按 pin 的 SHA 或 tag clone PyTorch 源码")
   .requiredOption("--pt-src <path>")
@@ -39,7 +54,23 @@ program
   });
 
 program
-  .command("03.worktree-stamp")
+  .command("04.patch")
+  .description("为 Windows CK SDPA + gfx120x 打补丁")
+  .requiredOption("--pt-src <path>")
+  .action((opts) => {
+    runPatch({ ptSrc: opts.ptSrc });
+  });
+
+program
+  .command("05.hipify")
+  .description("运行 build_amd.py（CUDA → HIP 源码生成）")
+  .requiredOption("--pt-src <path>")
+  .action((opts) => {
+    runHipify({ ptSrc: opts.ptSrc });
+  });
+
+program
+  .command("06.worktree-stamp")
   .description("写入或校验 patch+hipify+build 后的 worktree stamp")
   .requiredOption("--pt-src <path>")
   .requiredOption("-w, --workspace-root <path>")
@@ -47,7 +78,7 @@ program
   .option("--verify", "worktree cache restore 后校验 stamp")
   .action((opts) => {
     if (opts.write && opts.verify) {
-      throw new Error("03.worktree-stamp: use only one of --write or --verify");
+      throw new Error("06.worktree-stamp: use only one of --write or --verify");
     }
     if (opts.write) {
       runWorktreeStampWrite({
@@ -63,39 +94,11 @@ program
       });
       return;
     }
-    throw new Error("03.worktree-stamp: specify --write or --verify");
+    throw new Error("06.worktree-stamp: specify --write or --verify");
   });
 
 program
-  .command("04.patch")
-  .description("为 Windows CK SDPA + gfx120x 打补丁")
-  .requiredOption("--pt-src <path>")
-  .action((opts) => {
-    runPatch({ ptSrc: opts.ptSrc });
-  });
-
-program
-  .command("04.hipify")
-  .description("运行 build_amd.py（CUDA → HIP 源码生成）")
-  .requiredOption("--pt-src <path>")
-  .action((opts) => {
-    runHipify({ ptSrc: opts.ptSrc });
-  });
-
-program
-  .command("05.toolchain-fingerprint")
-  .description("输出 worktree cache key（lock+patch+wheel+toolchain 指纹）")
-  .option("-w, --workspace-root <path>", "仓库根目录（输出 cache-key）")
-  .option("--export-github-env", "将 WORKTREE_CACHE_KEY / CCACHE_CACHE_KEY 追加到 GITHUB_ENV")
-  .action((opts) => {
-    runToolchainFingerprint({
-      workspaceRoot: opts.workspaceRoot,
-      exportGithubEnv: Boolean(opts.exportGithubEnv),
-    });
-  });
-
-program
-  .command("06.build")
+  .command("07.build")
   .description("编译 PyTorch（worktree hit 时 ninja-install，否则 setup.py build）")
   .requiredOption("--pt-src <path>")
   .action((opts) => {

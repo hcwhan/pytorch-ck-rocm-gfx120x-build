@@ -69,17 +69,17 @@
 
 | Job | 作用 | 超时 |
 |-----|------|------|
-| `compile-and-wheel` | bootstrap（toolchain + worktree restore）、`06.build` + `08.wheel`、CPU smoke test | 12 h |
+| `compile-and-wheel` | bootstrap（toolchain + worktree restore）、`07.build` + `08.wheel`、CPU smoke test | 12 h |
 
 **Worktree cache**（整棵 `C:\pt\pytorch`：patch 后源码 + hipify + `build/`）：
 
 - Key：`worktree-v1-{lockHash8}-{patchHash8}-{wheelHash8}-msvc{…}-rocmClang{…}-pipToolchain{…}`
 - `lockHash8`：lock `toolchain` + `pytorch` + `compile`
-- `patchHash8`：`04.patch.ts`、`04.hipify.ts`、`gpu-archs.ts`、`add-make-kernel-pt.py`
+- `patchHash8`：`04.patch.ts`、`05.hipify.ts`、`gpu-archs.ts`、`add-make-kernel-pt.py`
 - `wheelHash8`：lock `wheel`
 - `pipToolchain`：pip / setuptools / wheel / ninja / packaging / psutil / **cmake**
 - **仅精确匹配**（无 `restore-keys`）
-- **hit**：跳过 prep / patch / hipify；`06.build` 走 **`ninja-install`**（不 rerun setup.py/cmake）
+- **hit**：跳过 prep / patch / hipify；`07.build` 走 **`ninja-install`**（不 rerun setup.py/cmake）
 - **miss**：prep → patch → hipify → compile → save
 - `use_cache=false`：不 restore（仍 lookup 记录 `exists`）；仅 compile **成功**时 save
 
