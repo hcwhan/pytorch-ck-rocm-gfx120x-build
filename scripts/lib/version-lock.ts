@@ -73,15 +73,34 @@ export function expectedWheelPattern(
   return `torch-*+${localVersion}*-${tag}-${tag}-win_amd64.whl`;
 }
 
+/** Ninja cache lockHash8：仅 toolchain + pytorch + compile（不含 wheel/release）。 */
+function ninjaCacheLockPayload(
+  lock: Pick<
+    z.infer<typeof versionLockSchema>,
+    "toolchain" | "pytorch" | "compile"
+  >,
+): string {
+  return JSON.stringify({
+    toolchain: lock.toolchain,
+    pytorch: lock.pytorch,
+    compile: lock.compile,
+  });
+}
+
 export function versionLockFileHash8(workspaceRoot: string): string {
   const lockPath = path.join(workspaceRoot, "VERSION.lock.json");
-  let contents: Buffer;
+  let parsed: unknown;
   try {
-    contents = readFileSync(lockPath);
+    parsed = JSON.parse(readFileSync(lockPath, "utf8"));
   } catch {
-    throw new Error(`VERSION.lock.json not found: ${lockPath}`);
+    throw new Error(`VERSION.lock.json not found or invalid JSON: ${lockPath}`);
   }
-  return createHash("sha256").update(contents).digest("hex").slice(0, 8);
+
+  const lock = versionLockSchema.parse(parsed);
+  return createHash("sha256")
+    .update(ninjaCacheLockPayload(lock), "utf8")
+    .digest("hex")
+    .slice(0, 8);
 }
 
 function normalizeCommitDate(raw: string): {

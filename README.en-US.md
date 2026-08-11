@@ -71,7 +71,7 @@ Push to `main` does **not** auto-trigger builds.
 |-----|------|---------|
 | `compile-and-wheel` | clone+patch, toolchain, ninja cache, `06.build` + `08.wheel`, CPU smoke test | 12 h |
 
-Cache keys include `VERSION.lock.json` SHA256 prefix (`torch-ck-gfx120x-serial-v2-{lockHash8}-`) and three toolchain fingerprints (MSVC toolset / ROCm clang / pip toolchain); **exact match only** (no `restore-keys`). `use_cache=false` skips restore (`used=false`); cache is still saved after a successful compile.
+Cache keys include lock `toolchain`+`pytorch`+`compile` JSON SHA256 prefix (`-v2-{lockHash8}-`; excludes `wheel`/`release`) and three toolchain fingerprints (MSVC toolset / ROCm clang / pip toolchain); **exact match only** (no `restore-keys`). `use_cache=false` skips restore (`used=false`); cache is still saved after a successful compile.
 
 ### Build stages
 

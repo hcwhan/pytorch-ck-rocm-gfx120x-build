@@ -8,7 +8,7 @@
 |----------|------|
 | **serial** | clone+patch+hipify → `setup.py build`（ninja cache）→ `bdist_wheel` → CPU smoke test |
 
-手动 `workflow_dispatch`；setuptools 同进程入口：`build/build-pytorch-steps.py`。Cache 前缀：`torch-ck-gfx120x-serial-v2-{lockHash8}`（`lockHash8` = `VERSION.lock.json` SHA256 前 8 位；精确 key，无 `restore-keys`；key 含 `msvc` + `rocmClang` + `pipToolchain` 三段指纹）。
+手动 `workflow_dispatch`；setuptools 同进程入口：`build/build-pytorch-steps.py`。Cache 前缀：`torch-ck-gfx120x-serial-v2-{lockHash8}`（`lockHash8` = lock `toolchain`+`pytorch`+`compile` JSON SHA256 前 8 位；不含 `wheel`/`release`；精确 key，无 `restore-keys`；key 含 `msvc` + `rocmClang` + `pipToolchain` 三段指纹）。
 
 ## 命名约定
 

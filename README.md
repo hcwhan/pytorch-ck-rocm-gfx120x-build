@@ -71,7 +71,7 @@
 |-----|------|------|
 | `compile-and-wheel` | clone+patch、toolchain、ninja cache、`06.build` + `08.wheel`、CPU smoke test | 12 h |
 
-- Cache key 含 `VERSION.lock.json` SHA256 前 8 位（`torch-ck-gfx120x-serial-v2-{lockHash8}-`）及三段工具链指纹（MSVC 工具集 / ROCm clang / pip 工具链）；**仅精确匹配**（无 `restore-keys`）。`use_cache=false` 时不 restore（`used=false`），compile 成功后仍 save。
+- Cache key 含 lock `toolchain`+`pytorch`+`compile` JSON SHA256 前 8 位（`-v2-{lockHash8}-`，不含 `wheel`/`release`）及三段工具链指纹（MSVC 工具集 / ROCm clang / pip 工具链）；**仅精确匹配**（无 `restore-keys`）。`use_cache=false` 时不 restore（`used=false`），compile 成功后仍 save。
 
 ### 构建阶段
 
