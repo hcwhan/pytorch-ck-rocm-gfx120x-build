@@ -27,7 +27,7 @@ Toolchain versions are pinned in **`VERSION.lock.json`** and loaded via `npx tsx
 | `wheel` | `wheel_local_version` | Wheel `+local` tag (env `WHEEL_LOCAL_VERSION`) |
 | `wheel` | `wheel_artifact_name` | GitHub Actions artifact name |
 | `release` | `release_tag_prefix` | Release tag prefix (`{prefix}-serial-build{run_number}`) |
-| `release` | `release_title_prefix` | Release title prefix (env `RELEASE_TITLE_PREFIX`) |
+| `release` | `release_title_prefix` | Release title prefix (env `RELEASE_TITLE_PREFIX`; GitHub Release name = `{prefix} YYYY.MM.DD HH:mm:ss`, Asia/Shanghai) |
 
 `EXPECTED_WHEEL_PATTERN` and `CK_TARGETS` are derived from the lock in `version-lock.ts` / `gpu-archs.ts`, not stored in the lock file (e.g. `gfx1200;gfx1201` → `CK_TARGETS=--targets gfx12`).
 
@@ -90,12 +90,11 @@ Env is set uniformly via `scripts/lib/init-build-env.ts` (includes `SOURCE_DATE_
 
 Artifact: **`wheel_artifact_name`** — `.whl`, `.sha256`, `wheel.manifest.json` (short-term Actions download).
 
-GitHub Release (uploaded after a successful build when `publish_release=true`):
+GitHub Release (uploaded after a successful build when `publish_release=true`; title format `{prefix} YYYY.MM.DD HH:mm:ss`, Asia/Shanghai):
 
-| Field | Example |
-|-------|---------|
-| Tag | `torch-ck-cp312-rocm7.14.0-gfx120x-serial-build123` |
-| Title | `PyTorch CK SDPA gfx120x Windows 2026.08.10 19:00:00` |
+| Workflow | Tag example | Release title example |
+|----------|-------------|----------------------|
+| serial | `torch-ck-cp312-rocm7.14.0-gfx120x-serial-build123` | PyTorch CK SDPA gfx120x Windows 2026.08.10 19:00:00 |
 
 ```powershell
 gh release list

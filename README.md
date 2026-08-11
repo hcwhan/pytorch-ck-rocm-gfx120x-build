@@ -27,7 +27,7 @@
 | `wheel` | `wheel_local_version` | wheel 的 `+local` 标签（env `WHEEL_LOCAL_VERSION`） |
 | `wheel` | `wheel_artifact_name` | GitHub Actions artifact 名称 |
 | `release` | `release_tag_prefix` | Release tag 前缀（`{prefix}-serial-build{run_number}`） |
-| `release` | `release_title_prefix` | Release 标题前缀（env `RELEASE_TITLE_PREFIX`） |
+| `release` | `release_title_prefix` | Release 标题前缀（env `RELEASE_TITLE_PREFIX`；GitHub Release name = `{prefix} YYYY.MM.DD HH:mm:ss`，Asia/Shanghai） |
 
 `EXPECTED_WHEEL_PATTERN`、`CK_TARGETS` 由 `version-lock.ts` / `gpu-archs.ts` 从 lock 推导，不在 lock 中存储（如 `gfx1200;gfx1201` → `CK_TARGETS=--targets gfx12`）。
 
@@ -90,12 +90,11 @@ env 统一经 `scripts/lib/init-build-env.ts`（含 `SOURCE_DATE_EPOCH`，取自
 
 Artifact：**`wheel_artifact_name`**（Actions 短期下载）
 
-GitHub Release（构建成功后自动上传；`publish_release=true` 时）：
+GitHub Release（构建成功后自动上传；`publish_release=true` 时；标题格式 `{prefix} YYYY.MM.DD HH:mm:ss`，Asia/Shanghai）：
 
-| 字段 | 示例 |
-|------|------|
-| Tag | `torch-ck-cp312-rocm7.14.0-gfx120x-serial-build123` |
-| 标题 | `PyTorch CK SDPA gfx120x Windows 2026.08.10 19:00:00` |
+| Workflow | Tag 示例 | Release 标题示例 |
+|----------|----------|------------------|
+| serial | `torch-ck-cp312-rocm7.14.0-gfx120x-serial-build123` | PyTorch CK SDPA gfx120x Windows 2026.08.10 19:00:00 |
 
 - `torch-*.whl`
 - `torch-*.whl.sha256`
