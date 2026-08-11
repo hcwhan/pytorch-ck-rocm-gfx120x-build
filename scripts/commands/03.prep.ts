@@ -1,7 +1,6 @@
 import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { run, runCapture } from "../lib/exec.js";
-import { writePrepStamp } from "../lib/pt-prep-stamp.js";
 import { requireLockEnv } from "../lib/require-env.js";
 
 function configureGitFetchParallelism(): void {
@@ -113,13 +112,6 @@ export function runPrep(options: { ptSrc: string }): void {
   console.log(
     `Commit author date OK: ${gitAuthorDate} (lock=${pytorchBuildCommitDate})`,
   );
-
-  writePrepStamp(root, {
-    repo: pytorchRepo,
-    build_commit: pytorchBuildCommit,
-    build_commit_date: pytorchBuildCommitDate,
-    resolved_commit: resolvedCommit,
-  });
 
   rmSync(path.join(root, ".git"), { recursive: true, force: true });
 

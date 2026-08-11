@@ -69,7 +69,7 @@
 
 | Job | 作用 | 超时 |
 |-----|------|------|
-| `compile-and-wheel` | bootstrap（toolchain + worktree restore）、`06.build` + `07.wheel`、CPU smoke test | 12 h |
+| `compile-and-wheel` | bootstrap（toolchain + worktree restore + verify）、`07.build` + `08.wheel`、CPU smoke test | 12 h |
 
 **Worktree cache**（整棵 `C:\pt\pytorch`：patch 后源码 + hipify + `build/`）：
 
@@ -79,20 +79,20 @@
 - `wheelHash8`：lock `wheel`
 - `pipToolchain`：pip / setuptools / wheel / ninja / packaging / psutil / **cmake**
 - **仅精确匹配**（无 `restore-keys`）
-- **hit**：跳过 prep / patch / hipify；`06.build` 走 **`ninja-install`**（不 rerun setup.py/cmake）
-- **miss**：prep → patch → hipify → compile → save
-- `use_cache=false`：不 restore（仍 lookup 记录 `exists`）；仅 compile **成功**时 save
+- **hit + verify 通过**：跳过 prep / patch / hipify
+- **compile**：始终 **`setup.py build`**（有 `build/` 时上游 skip configure、增量编译）
+- **save**：`use_cache=true` 时 compile 非 skipped 即 save；`use_cache=false` 时仅成功 save
+- **miss / verify 失败**：prep → patch → hipify → compile → save
 
 另有独立 **pip toolchain cache**（`PIP_TOOLCHAIN_CACHE_KEY`）与 **ccache**（`CCACHE_CACHE_KEY`，`ccache-v1-{lockHash8}-{patchHash8}-…`）分层。
 
 ### 构建阶段
 
-编译/打 wheel 唯一入口：`build/build-pytorch-steps.py`（同进程 `exec_module(setup.py)`），按 `--step` 二选一：
+编译/打 wheel 唯一入口：`build/build-pytorch-steps.py`。CI 固定 `--step build` / `--step wheel`：
 
 | step | 作用 |
 |------|------|
-| `build` | `setup.py build`（worktree miss 冷启动） |
-| `ninja-install` | `ninja -C build install`（worktree hit 增量编译） |
+| `build` | `setup.py build`（CI compile；有 cache 时上游 skip configure） |
 | `wheel` | `setup.py bdist_wheel`（打包 wheel） |
 
 串行 workflow 调用序列：`--step build` → `--step wheel`。
@@ -128,7 +128,7 @@ torch-*+ck.rocm7.14.0.gfx120x*-cp312-cp312-win_amd64.whl
 
 | 检查 | 脚本 |
 |------|------|
-| CI smoke test（CPU） | `npx tsx scripts/cli.ts 08.verify --dist-dir dist --build-caches dist\build-caches.json` |
+| CI smoke test（CPU） | `npx tsx scripts/cli.ts 09.verify --dist-dir dist --build-caches dist\build-caches.json` |
 | 部署前 GPU smoke test（gfx120x 真机） | `python test/gpu-smoke-test.py -w .` |
 
 Smoke test：wheel 文件名/结构（含 CK dim 符号）→ pip 安装 → 校验 `torch.backends.cuda.is_ck_sdpa_available()`。GPU 上跑 CK SDPA 见 `test/gpu-smoke-test.py`（部署前在真机手动跑）。

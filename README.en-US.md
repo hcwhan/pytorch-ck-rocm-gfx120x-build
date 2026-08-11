@@ -69,7 +69,7 @@ Push to `main` does **not** auto-trigger builds.
 
 | Job | Role | Timeout |
 |-----|------|---------|
-| `compile-and-wheel` | bootstrap (toolchain + worktree restore), `06.build` + `07.wheel`, CPU smoke test | 12 h |
+| `compile-and-wheel` | bootstrap (toolchain + worktree restore + verify), `07.build` + `08.wheel`, CPU smoke test | 12 h |
 
 **Worktree cache** (entire `C:\pt\pytorch`: patched source + hipify + `build/`):
 
@@ -79,20 +79,20 @@ Push to `main` does **not** auto-trigger builds.
 - `wheelHash8`: lock `wheel`
 - `pipToolchain`: pip / setuptools / wheel / ninja / packaging / psutil / **cmake**
 - **Exact match only** (no `restore-keys`)
-- **hit**: skip prep / patch / hipify; `06.build` uses **`ninja-install`** (no setup.py/cmake rerun)
-- **miss**: prep → patch → hipify → compile → save
-- `use_cache=false`: skip restore (still probes `exists`); save only after a **successful** compile
+- **hit + verify pass**: skip prep / patch / hipify
+- **compile**: always **`setup.py build`** (upstream skips configure when `build/` is valid)
+- **save**: `use_cache=true` saves after compile (not skipped); `use_cache=false` saves only on success
+- **miss / verify fail**: prep → patch → hipify → compile → save
 
 A separate **pip toolchain cache** (`PIP_TOOLCHAIN_CACHE_KEY`) and **ccache** (`CCACHE_CACHE_KEY`, `ccache-v1-{lockHash8}-{patchHash8}-…`) layer above worktree cache.
 
 ### Build stages
 
-Single entry point for compile and wheel packaging: `build/build-pytorch-steps.py` (in-process `exec_module(setup.py)`), one of two `--step` modes:
+Single entry point for compile and wheel packaging: `build/build-pytorch-steps.py`. CI uses `--step build` / `--step wheel`:
 
 | step | Role |
 |------|------|
-| `build` | `setup.py build` (worktree miss cold start) |
-| `ninja-install` | `ninja -C build install` (worktree hit incremental compile) |
+| `build` | `setup.py build` (CI compile; upstream skips configure when `build/` exists) |
 | `wheel` | `setup.py bdist_wheel` (package wheel) |
 
 Serial workflow invocation: `--step build` → `--step wheel`.
@@ -124,7 +124,7 @@ torch-*+ck.rocm7.14.0.gfx120x*-cp312-cp312-win_amd64.whl
 
 | Check | Script |
 |-------|--------|
-| CI smoke test (CPU) | `npx tsx scripts/cli.ts 08.verify --dist-dir dist --build-caches dist\build-caches.json` |
+| CI smoke test (CPU) | `npx tsx scripts/cli.ts 09.verify --dist-dir dist --build-caches dist\build-caches.json` |
 | Pre-deploy GPU smoke test (gfx120x hardware) | `python test/gpu-smoke-test.py -w .` |
 
 Smoke test covers wheel filename/structure (including CK dim markers), pip install, and `torch.backends.cuda.is_ck_sdpa_available()`. GPU CK SDPA forward pass is in `test/gpu-smoke-test.py` (run manually on gfx120x hardware before deploy).

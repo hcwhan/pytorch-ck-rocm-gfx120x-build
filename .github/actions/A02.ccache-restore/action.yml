@@ -1,6 +1,11 @@
 name: Restore ccache
 description: 恢复 GHA ccache 目录（CCACHE_CACHE_KEY 精确匹配）
 
+outputs:
+  cache-exists:
+    description: CCACHE_CACHE_KEY 对应的远程缓存条目是否存在（'true' / 'false'）
+    value: ${{ steps.ccache-cache.outputs.cache-exists }}
+
 runs:
   using: composite
   steps:
@@ -11,8 +16,11 @@ runs:
         path: ${{ runner.temp }}/ccache
         key: ${{ env.CCACHE_CACHE_KEY }}
 
-    - name: Log ccache restore
+    - name: Resolve ccache cache outputs
+      id: ccache-cache
       shell: pwsh
       run: |
-        $hit = '${{ steps.ccache-restore.outputs.cache-hit }}' -eq 'true'
-        Write-Host "ccache restore: hit=$hit key=$env:CCACHE_CACHE_KEY dir=$env:CCACHE_DIR"
+        $exists = '${{ steps.ccache-restore.outputs.cache-hit }}' -eq 'true'
+        Write-Host "ccache restore: exists=$exists key=$env:CCACHE_CACHE_KEY dir=$env:CCACHE_DIR"
+        $existsStr = if ($exists) { 'true' } else { 'false' }
+        "cache-exists=$existsStr" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8

@@ -50,8 +50,9 @@ jobs:
           pt-src: ${{ env.PT_SRC }}
           cache-key: ${{ env.WORKTREE_CACHE_KEY }}
           cache-exists: ${{ steps.bootstrap.outputs.worktree-cache-exists }}
+          ccache-cache-exists: ${{ steps.bootstrap.outputs.ccache-cache-exists }}
           use-cache: ${{ env.USE_CACHE }}
-          run: npx tsx scripts/cli.ts 06.build --pt-src $env:PT_SRC
+          run: npx tsx scripts/cli.ts 07.build --pt-src $env:PT_SRC
 
       - name: Write compile cache metadata
         shell: pwsh
@@ -67,7 +68,7 @@ jobs:
 
       - name: Package torch wheel
         shell: pwsh
-        run: npx tsx scripts/cli.ts 07.wheel --pt-src $env:PT_SRC --dist-dir $env:GITHUB_WORKSPACE\dist
+        run: npx tsx scripts/cli.ts 08.wheel --pt-src $env:PT_SRC --dist-dir $env:GITHUB_WORKSPACE\dist
 
       - name: Verify wheel and publish
         uses: "./.github/actions/A99.pt-verify-publish"

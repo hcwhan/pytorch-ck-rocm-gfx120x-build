@@ -6,8 +6,11 @@ outputs:
     description: worktree cache 远程条目是否存在
     value: ${{ steps.worktree-cache.outputs.cache-exists }}
   worktree-cache-used:
-    description: 已 restore worktree cache
-    value: ${{ steps.worktree-cache.outputs.cache-used }}
+    description: 已 restore 且 bootstrap 校验通过（跳过 prep/patch/hipify）
+    value: ${{ steps.export-worktree-used.outputs.cache-used }}
+  ccache-cache-exists:
+    description: ccache 远程条目是否存在
+    value: ${{ steps.ccache-cache.outputs.cache-exists }}
 
 runs:
   using: composite
@@ -41,6 +44,7 @@ runs:
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Restore ccache
+      id: ccache-cache
       uses: "./.github/actions/A02.ccache-restore"
 
     - name: Restore worktree cache
@@ -50,8 +54,28 @@ runs:
         pt-src: ${{ env.PT_SRC }}
         use-cache: ${{ env.USE_CACHE }}
 
+    - name: Verify restored worktree bootstrap
+      if: steps.worktree-cache.outputs.cache-used == 'true'
+      id: worktree-bootstrap-verify
+      continue-on-error: true
+      shell: pwsh
+      run: |
+        npx tsx scripts/cli.ts 06.verify-bootstrap --pt-src $env:PT_SRC
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    - name: Resolve worktree cache used
+      id: export-worktree-used
+      shell: pwsh
+      run: |
+        $hit = '${{ steps.worktree-cache.outputs.cache-used }}' -eq 'true'
+        $verified = '${{ steps.worktree-bootstrap-verify.outcome }}' -eq 'success'
+        $used = if ($hit -and $verified) { 'true' } else { 'false' }
+        Write-Host "Worktree cache used: hit=$hit verified=$verified -> $used"
+        "cache-used=$used" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "WORKTREE_CACHE_USED=$used" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
     - name: Clone pytorch source
-      if: steps.worktree-cache.outputs.cache-used != 'true'
+      if: steps.export-worktree-used.outputs.cache-used != 'true'
       shell: pwsh
       run: |
         git config --global core.longpaths true
@@ -59,15 +83,10 @@ runs:
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Patch and hipify pytorch source
-      if: steps.worktree-cache.outputs.cache-used != 'true'
+      if: steps.export-worktree-used.outputs.cache-used != 'true'
       shell: pwsh
       run: |
         npx tsx scripts/cli.ts 04.patch --pt-src $env:PT_SRC
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         npx tsx scripts/cli.ts 05.hipify --pt-src $env:PT_SRC
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-    - name: Export worktree cache used env
-      shell: pwsh
-      run: |
-        "WORKTREE_CACHE_USED=${{ steps.worktree-cache.outputs.cache-used }}" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8

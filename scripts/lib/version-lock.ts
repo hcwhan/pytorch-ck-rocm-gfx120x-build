@@ -46,7 +46,7 @@ const versionLockSchema = z.object({
   }),
 });
 
-export type VersionLockVars = {
+type VersionLockVars = {
   PYTHON_VERSION: string;
   ROCM_INDEX: string;
   ROCM_VERSION: string;

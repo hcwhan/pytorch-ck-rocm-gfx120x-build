@@ -5,10 +5,11 @@ import { runToolchainFingerprint } from "./commands/02.toolchain-fingerprint.js"
 import { runPrep } from "./commands/03.prep.js";
 import { runPatch } from "./commands/04.patch.js";
 import { runHipify } from "./commands/05.hipify.js";
-import { runBuild } from "./commands/06.build.js";
-import { runWheel } from "./commands/07.wheel.js";
-import { runVerify } from "./commands/08.verify.js";
-import { runPublish } from "./commands/09.publish.js";
+import { runVerifyBootstrap } from "./commands/06.verify-bootstrap.js";
+import { runBuild } from "./commands/07.build.js";
+import { runWheel } from "./commands/08.wheel.js";
+import { runVerify } from "./commands/09.verify.js";
+import { runPublish } from "./commands/10.publish.js";
 
 const program = new Command();
 
@@ -66,15 +67,23 @@ program
   });
 
 program
-  .command("06.build")
-  .description("编译 PyTorch（worktree hit 时 ninja-install，否则 setup.py build）")
+  .command("06.verify-bootstrap")
+  .description("校验 restore 后的 worktree 已完成 prep+patch+hipify")
+  .requiredOption("--pt-src <path>")
+  .action((opts) => {
+    runVerifyBootstrap({ ptSrc: opts.ptSrc });
+  });
+
+program
+  .command("07.build")
+  .description("编译 PyTorch（setup.py build；有 build/ 时上游自动跳过 cmake configure）")
   .requiredOption("--pt-src <path>")
   .action((opts) => {
     runBuild({ ptSrc: opts.ptSrc });
   });
 
 program
-  .command("07.wheel")
+  .command("08.wheel")
   .description("打包 torch wheel（setup.py bdist_wheel）")
   .requiredOption("--pt-src <path>")
   .requiredOption("--dist-dir <path>")
@@ -86,7 +95,7 @@ program
   });
 
 program
-  .command("08.verify")
+  .command("09.verify")
   .description("CPU wheel 冒烟测试")
   .requiredOption("--dist-dir <path>")
   .requiredOption(
@@ -101,7 +110,7 @@ program
   });
 
 program
-  .command("09.publish")
+  .command("10.publish")
   .description("准备 GitHub Release 元数据")
   .requiredOption("--dist-dir <path>")
   .requiredOption("--workflow-name <name>")

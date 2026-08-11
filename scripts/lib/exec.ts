@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 
-export interface RunOptions {
+interface RunOptions {
   quiet?: boolean;
 }
 
