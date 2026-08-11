@@ -50,5 +50,7 @@ runs:
           $used = $false
         }
         Write-Host "Worktree cache restore: exists=$exists used=$used key=$env:WORKTREE_CACHE_KEY"
-        "cache-exists=$exists" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-        "cache-used=$used" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        $existsStr = if ($exists) { 'true' } else { 'false' }
+        $usedStr = if ($used) { 'true' } else { 'false' }
+        "cache-exists=$existsStr" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "cache-used=$usedStr" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
