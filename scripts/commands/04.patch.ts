@@ -9,6 +9,26 @@ import {
 } from "../lib/gpu-archs.js";
 import { requireLockEnv } from "../lib/require-env.js";
 
+/**
+ * PyTorch CK SDPA gfx120x 程序化补丁。
+ *
+ * 合入状态以 VERSION.lock `pytorch.build_commit`（当前 v2.13.0）为准，非 main HEAD。
+ *
+ * PR 备注格式：
+ * - `pytorch/pytorch#NNNN` — 上游 PR 或与其等价的改动
+ * - `local` — 本仓库 Windows/gfx120x 构建补丁（上游未合并或需额外适配）
+ *
+ * 上游 PR 索引：
+ * - #143695 — 已合入 v2.13.0：CK SDPA 后端（mha_*_ck.hip、add_make_kernel_pt.sh）
+ * - #144777 — 已合入 v2.13.0：kentry_pt 架构 guard 移至 launch_kernel_pt.hpp
+ * - #155103 — 已合入 v2.13.0：launch_kernel_pt.hpp 增加 gfx950
+ * - #157964 — 已合入 v2.13.0：CK FMHA codegen recipe（仍用 python3/bash）
+ * - #178310 — 已合入 v2.13.0：USE_FLASH_ATTENTION 路径默认启用 CK SDPA
+ * - #182733 — 已合入 v2.13.0：Windows 禁用 CK SDPA（NOT WIN32；本仓库 patch 撤销）
+ * - #183962 — 已合入 v2.13.0：aten CMake 中 Windows 不自动 USE_ROCM_CK_SDPA=ON
+ * - #187267 — 已合 main，未进 v2.13.0：ckSDPASupported() 从 ckSupported() 拆分
+ * - #188114 — 未合（OPEN）：gfx1200/gfx1201 RDNA4 支持（本仓库 patch 提前应用）
+ */
 type PatchPoint = {
   name: string;
   before: string | string[];
@@ -16,6 +36,7 @@ type PatchPoint = {
   replaceAll?: boolean;
 };
 
+/** 从多组 before/after 备选中解析与当前文件内容匹配的一组。 */
 function resolvePatchVariant(
   content: string,
   point: PatchPoint,
@@ -53,12 +74,14 @@ function resolvePatchVariant(
   );
 }
 
+/** 读取文件并统一为 LF，同时记录原始 EOL 以便写回。 */
 function readNormalized(filePath: string): { content: string; eol: "\n" | "\r\n" } {
   const raw = readFileSync(filePath, "utf8");
   const eol: "\n" | "\r\n" = raw.includes("\r\n") ? "\r\n" : "\n";
   return { content: raw.replace(/\r\n/g, "\n"), eol };
 }
 
+/** 按原始 EOL 写回文件。 */
 function writeNormalized(
   filePath: string,
   content: string,
@@ -68,6 +91,7 @@ function writeNormalized(
   writeFileSync(filePath, out, "utf8");
 }
 
+/** 对单文件依次校验 before-state 并应用全部 patch 点。 */
 function applyPoints(filePath: string, points: PatchPoint[]): void {
   let { content, eol } = readNormalized(filePath);
   const resolved = points.map((point) => ({
@@ -97,12 +121,21 @@ function applyPoints(filePath: string, points: PatchPoint[]): void {
   writeNormalized(filePath, content, eol);
 }
 
+/** 读取 lock `CK_FMHA_DISABLE_BWD` 是否为 inference-only 构建。 */
 function ckFmhaDisableBwd(): boolean {
   return requireLockEnv("CK_FMHA_DISABLE_BWD") === "1";
 }
 
+/**
+ * CK FMHA 子目录 `flash_attn/ck/CMakeLists.txt` 的 patch 点。
+ *
+ * 基于 v2.13.0 上游 #143695/#157964 的 codegen 流程，补充 Windows 适配（Python3_EXECUTABLE、
+ * 独立 RESULT_VARIABLE）与 #188114 的 `--targets gfx12`（由 lock CK_TARGETS 参数化）。
+ * `disableBwd=true` 时省略 bwd codegen（local inference-only）。
+ */
 function buildCkCmakePoints(ckTargets: string, ckOptDim: string, disableBwd: boolean): PatchPoint[] {
   const common: PatchPoint[] = [
+    // local：Windows 无 python3 命令；上游 #143695/#157964 CK FMHA CMake 假定 Linux python3
     {
       name: "ck-fmha-generate-python3-executable",
       before: `set(CK_FMHA_GENERATE python3 \${CMAKE_CURRENT_LIST_DIR}/generate_compat.py
@@ -110,12 +143,14 @@ function buildCkCmakePoints(ckTargets: string, ckOptDim: string, disableBwd: boo
       after: `set(CK_FMHA_GENERATE \${Python3_EXECUTABLE} \${CMAKE_CURRENT_LIST_DIR}/generate_compat.py
     \${CMAKE_SOURCE_DIR}/third_party/composable_kernel/example/ck_tile/01_fmha/generate.py)`,
     },
+    // pytorch/pytorch#188114 + local：codegen 传入 --targets gfx12（由 lock CK_TARGETS 参数化）
     {
       name: "ck-codegen-list-optdim",
       before: `COMMAND \${CK_FMHA_GENERATE} --optdim=${ckOptDim}`,
       after: `COMMAND \${CK_FMHA_GENERATE} ${ckTargets} --optdim=${ckOptDim}`,
       replaceAll: true,
     },
+    // local：各 emit 步骤独立 RESULT_VARIABLE；上游共用 ret 在 Windows 易掩盖失败
     {
       name: "ck-codegen-emit-fwd-result",
       before: `execute_process(COMMAND \${CK_FMHA_GENERATE} --api fwd  --optdim=${ckOptDim} --receipt 4 --filter "*_lse*ntrload*nsink*" --output_dir \${CMAKE_CURRENT_LIST_DIR}
@@ -132,6 +167,7 @@ if(ck_fmha_emit_fwd_ret AND NOT ck_fmha_emit_fwd_ret EQUAL 0)
   message( FATAL_ERROR "CK Tile FMHA FAILED to generate FWD kernels.")
 endif()`,
     },
+    // local：同上（fwd_splitkv emit）
     {
       name: "ck-codegen-emit-fwd-splitkv-result",
       before: `execute_process(COMMAND \${CK_FMHA_GENERATE} --api fwd_splitkv --optdim=${ckOptDim} --receipt 4 --filter "*psdv*_lse*_nsquant*" --output_dir \${CMAKE_CURRENT_LIST_DIR}
@@ -148,6 +184,7 @@ if(ck_fmha_emit_fwd_splitkv_ret AND NOT ck_fmha_emit_fwd_splitkv_ret EQUAL 0)
     message( FATAL_ERROR "CK Tile FMHA FAILED to generate FWD_SPLITKV kernels.")
 endif()`,
     },
+    // local：同上（fwd_appendkv emit）
     {
       name: "ck-codegen-emit-fwd-appendkv-result",
       before: `execute_process(COMMAND \${CK_FMHA_GENERATE} --api fwd_appendkv --optdim=${ckOptDim} --receipt 4 --filter "*psskddv_*" --output_dir \${CMAKE_CURRENT_LIST_DIR}
@@ -164,6 +201,7 @@ if(ck_fmha_emit_fwd_appendkv_ret AND NOT ck_fmha_emit_fwd_appendkv_ret EQUAL 0)
     message( FATAL_ERROR "CK Tile FMHA FAILED to generate FWD_APPENDKV kernels.")
 endif()`,
     },
+    // local：Windows 无 bash；替代上游 #143695 add_make_kernel_pt.sh
     {
       name: "ck-make-kernel-pt-fwd-python",
       before: `execute_process(
@@ -173,6 +211,7 @@ endif()`,
   COMMAND \${Python3_EXECUTABLE} \${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.py \${CMAKE_CURRENT_LIST_DIR}/fwd_blob_list.txt
   RESULT_VARIABLE ret)`,
     },
+    // local：同上（fwd_splitkv blob list）
     {
       name: "ck-make-kernel-pt-fwd-splitkv-python",
       before: `execute_process(
@@ -182,6 +221,7 @@ endif()`,
   COMMAND \${Python3_EXECUTABLE} \${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.py \${CMAKE_CURRENT_LIST_DIR}/fwd_splitkv_blob_list.txt
   RESULT_VARIABLE ret)`,
     },
+    // local：同上（fwd_appendkv blob list）
     {
       name: "ck-make-kernel-pt-fwd-appendkv-python",
       before: `execute_process(
@@ -191,6 +231,7 @@ endif()`,
   COMMAND \${Python3_EXECUTABLE} \${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.py \${CMAKE_CURRENT_LIST_DIR}/fwd_appendkv_blob_list.txt
   RESULT_VARIABLE ret)`,
     },
+    // local：Windows 无 bash mv；上游 #143695 用 bash 将 .cpp 重命名为 .hip
     {
       name: "ck-rename-cpp-to-hip-cmake",
       before: `# Change file extensions to .hip
@@ -213,6 +254,7 @@ endforeach()`,
   if (!disableBwd) {
     return [
       ...common.slice(0, 2),
+      // pytorch/pytorch#188114 + local：bwd codegen 传入 --targets（CK_TARGETS 参数化）
       {
         name: "ck-codegen-list-bwd",
         before: `  COMMAND \${CK_FMHA_GENERATE}
@@ -221,6 +263,7 @@ endforeach()`,
   --api bwd --optdim=${ckOptDim}`,
       },
       ...common.slice(2, 5),
+      // local：bwd emit 独立 RESULT_VARIABLE
       {
         name: "ck-codegen-emit-bwd-result",
         before: `execute_process(COMMAND \${CK_FMHA_GENERATE} --api bwd --optdim=${ckOptDim} --receipt 4 --filter "*psdv*@*psd*@*_pd1dv1*_ntrload*" --output_dir \${CMAKE_CURRENT_LIST_DIR}
@@ -239,6 +282,7 @@ if(ck_fmha_emit_bwd_ret AND NOT ck_fmha_emit_bwd_ret EQUAL 0)
 endif()`,
       },
       ...common.slice(5),
+      // local：bwd blob list 用 Python 替代 #143695 add_make_kernel_pt.sh
       {
         name: "ck-make-kernel-pt-bwd-python",
         before: `execute_process(
@@ -254,6 +298,7 @@ endif()`,
   const bwdOmit = "# CK FMHA bwd omitted (inference-only; CK_FMHA_DISABLE_BWD=1)\n";
   return [
     ...common.slice(0, 2),
+    // local：inference-only 省略 bwd codegen list（lock CK_FMHA_DISABLE_BWD=1）
     {
       name: "ck-codegen-list-bwd-omit",
       before: `execute_process(
@@ -270,6 +315,7 @@ endif()
       after: bwdOmit,
     },
     ...common.slice(2, 5),
+    // local：inference-only 省略 bwd kernel emit
     {
       name: "ck-codegen-emit-bwd-omit",
       before: `execute_process(COMMAND \${CK_FMHA_GENERATE} --api bwd --optdim=${ckOptDim} --receipt 4 --filter "*psdv*@*psd*@*_pd1dv1*_ntrload*" --output_dir \${CMAKE_CURRENT_LIST_DIR}
@@ -284,6 +330,7 @@ endif()
       after: bwdOmit,
     },
     ...common.slice(5),
+    // local：inference-only 省略 bwd make_kernel_pt 步骤
     {
       name: "ck-make-kernel-pt-bwd-omit",
       before: `# Change make_kernel to make_kernel_pt for bwd
@@ -301,8 +348,15 @@ endif()
   ];
 }
 
+/**
+ * inference-only 时 `aten/src/ATen/CMakeLists.txt` 的 CK SDPA 相关 patch。
+ *
+ * local：lock `CK_FMHA_DISABLE_BWD=1` 时跳过 fav_v3/bwd blob、定义 FLASHATTENTION_DISABLE_BACKWARD。
+ * 上游 #143695 默认仍编译完整 bwd 与 fav_v3（MI3xx ASM）。
+ */
 function buildInferenceOnlyAtenPoints(): PatchPoint[] {
   return [
+    // local：inference-only 定义 FLASHATTENTION_DISABLE_BACKWARD（上游 #143695 bwd 仍编译）
     {
       name: "aten-ck-sdpa-disable-backward-def",
       before: `        __GCC_HAVE_DWARF2_CFI_ASM=1
@@ -311,6 +365,7 @@ function buildInferenceOnlyAtenPoints(): PatchPoint[] {
         FLASHATTENTION_DISABLE_BACKWARD
         USE_ROCM_CK_SDPA)`,
     },
+    // local：inference-only 跳过 fav_v3（MI3xx ASM bwd，#143695 fav_v3 子目录）
     {
       name: "aten-ck-sdpa-skip-fav-v3",
       before: `    add_subdirectory(native/transformers/hip/flash_attn/ck)
@@ -325,6 +380,7 @@ function buildInferenceOnlyAtenPoints(): PatchPoint[] {
          "native/transformers/hip/flash_attn/ck/*.hip")
     list(FILTER ck_sdpa_sources_hip EXCLUDE REGEX "fmha_bwd")`,
     },
+    // local：inference-only 移除 AITER_EMBEDDED_HSA_HEADER（无 fav_v3 嵌入 HSA）
     {
       name: "aten-ck-sdpa-omit-aiter-hsa-header",
       before: `    target_compile_definitions(ck_sdpa PUBLIC \${CK_SDPA_EXTRA_HIPCC_OPTIONS})
@@ -354,6 +410,13 @@ function buildInferenceOnlyAtenPoints(): PatchPoint[] {
 const BWD_DISABLED_MSG =
   "This flash attention build does not support backward.";
 
+/**
+ * inference-only 时对 `mha_bwd_ck.hip` 的就地 stub patch。
+ *
+ * local：用 `#if 0` 包裹 bwd helper/函数体，入口保留 TORCH_CHECK。
+ * 兼容 v2.13.0（已有 FLASHATTENTION_DISABLE_BACKWARD guard）与更早 upstream 布局。
+ * 上游 bwd 实现来自 #143695。
+ */
 function buildMhaBwdCkStubPoints(): PatchPoint[] {
   const omitFunctionBodyBefore = [
     `#endif
@@ -378,6 +441,7 @@ function buildMhaBwdCkStubPoints(): PatchPoint[] {
     auto stream = at::cuda::getCurrentCUDAStream().stream();`;
 
   return [
+    // local：inference-only 用 #if 0 包裹 bwd helper（上游 #143695 mha_bwd_ck.hip）
     {
       name: "mha-bwd-ck-omit-helper-preamble",
       before: [
@@ -419,6 +483,7 @@ namespace pytorch_flash {
 aiter::mha_bwd_args get_ck_fmha_bwd_args`,
       ],
     },
+    // local：inference-only 关闭 bwd helper #if 0 块
     {
       name: "mha-bwd-ck-close-helper-if0",
       before: [
@@ -452,11 +517,13 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
 mha_bwd_ck(const at::Tensor &dout,                   // batch_size x seqlen_q x num_heads, x head_size_og`,
       ],
     },
+    // local：inference-only stub mha_bwd_ck 函数体（v2.13.0 已有 FLASHATTENTION_DISABLE_BACKWARD guard）
     {
       name: "mha-bwd-ck-omit-function-body",
       before: omitFunctionBodyBefore,
       after: omitFunctionBodyAfter,
     },
+    // local：inference-only 关闭 mha_bwd_ck 函数体 #if 0
     {
       name: "mha-bwd-ck-close-function-body-if0",
       before: `    return { dq, dk, dv, softmax_d, dbias };
@@ -470,6 +537,11 @@ mha_bwd_ck(const at::Tensor &dout,                   // batch_size x seqlen_q x 
   ];
 }
 
+/**
+ * inference-only 时对 `mha_varlen_bwd_ck.hip` 的就地 stub patch。
+ *
+ * 逻辑同 {@link buildMhaBwdCkStubPoints}，适配 varlen bwd 上游布局差异（#143695）。
+ */
 function buildMhaVarlenBwdCkStubPoints(): PatchPoint[] {
   const omitFunctionBodyBefore = [
     `#endif
@@ -494,6 +566,7 @@ function buildMhaVarlenBwdCkStubPoints(): PatchPoint[] {
     auto stream = at::cuda::getCurrentCUDAStream().stream();`;
 
   return [
+    // local：inference-only 用 #if 0 包裹 varlen bwd helper（上游 #143695 mha_varlen_bwd_ck.hip）
     {
       name: "mha-varlen-bwd-ck-omit-helper-preamble",
       before: [
@@ -535,6 +608,7 @@ namespace pytorch_flash {
 fmha_bwd_traits get_ck_fmha_varlen_bwd_traits`,
       ],
     },
+    // local：inference-only 关闭 varlen bwd helper #if 0 块
     {
       name: "mha-varlen-bwd-ck-close-helper-if0",
       before: [
@@ -566,11 +640,13 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
 mha_varlen_bwd_ck(const at::Tensor &dout,                   // total_q x num_heads x head_size`,
       ],
     },
+    // local：inference-only stub mha_varlen_bwd_ck 函数体
     {
       name: "mha-varlen-bwd-ck-omit-function-body",
       before: omitFunctionBodyBefore,
       after: omitFunctionBodyAfter,
     },
+    // local：inference-only 关闭 mha_varlen_bwd_ck 函数体 #if 0
     {
       name: "mha-varlen-bwd-ck-close-function-body-if0",
       before: `    return { dq, dk, dv, softmax_d, dbias };
@@ -584,8 +660,14 @@ mha_varlen_bwd_ck(const at::Tensor &dout,                   // total_q x num_hea
   ];
 }
 
+/**
+ * inference-only 时对 `me_bwd_ck.hip` 的就地 stub patch。
+ *
+ * local：memory-efficient bwd 包装层直接 TORCH_CHECK，不调用 mha_bwd_ck（#143695）。
+ */
 function buildMeBwdCkStubPoints(): PatchPoint[] {
   return [
+    // local：inference-only stub me_bwd_ck 函数体（上游 #143695 me_bwd_ck.hip）
     {
       name: "me-bwd-ck-omit-function-body",
       before: `{
@@ -627,6 +709,7 @@ function buildMeBwdCkStubPoints(): PatchPoint[] {
        dBias] =
         mha_bwd_ck(`,
     },
+    // local：inference-only 关闭 me_bwd_ck 函数体 #if 0
     {
       name: "me-bwd-ck-close-function-body-if0",
       before: `  return std::make_tuple(at::Tensor{}, at::Tensor{}, at::Tensor{}, at::Tensor{});
@@ -644,6 +727,16 @@ function buildMeBwdCkStubPoints(): PatchPoint[] {
   ];
 }
 
+/**
+ * 对 clone 后的 PyTorch 源码应用 gfx120x CK SDPA 全部 patch。
+ *
+ * 补丁分组：
+ * 1. 根 CMakeLists.txt — 启用 Windows CK SDPA（撤销 #182733）、MSVC /Brepro（local）
+ * 2. Context.cpp / launch_kernel_pt.hpp — #188114 gfx120x 架构支持
+ * 3. ck/CMakeLists.txt — Windows codegen 适配 + CK_TARGETS（buildCkCmakePoints）
+ * 4. aten/CMakeLists.txt — #188114 arch whitelist；可选 inference-only（buildInferenceOnlyAtenPoints）
+ * 5. bwd *.hip — 可选 inference-only stub（buildMha* / buildMeBwdCkStubPoints）
+ */
 export function runPatch(options: { ptSrc: string }): void {
   const root = path.resolve(options.ptSrc);
   const ckTargets = requireLockEnv("CK_TARGETS");
@@ -655,6 +748,7 @@ export function runPatch(options: { ptSrc: string }): void {
   const gpuArchCmake = formatGpuArchCmakeList(gpuArchList);
 
   applyPoints(path.join(root, "CMakeLists.txt"), [
+    // local：撤销 v2.13.0 已合入的 #182733 NOT WIN32，Windows gfx120x 显式启用 CK SDPA
     {
       name: "enable-windows-ck-sdpa",
       before:
@@ -662,6 +756,7 @@ export function runPatch(options: { ptSrc: string }): void {
       after:
         'cmake_dependent_option(USE_ROCM_CK_SDPA "Use ROCm Composable Kernel for SDPA" ON "USE_ROCM" OFF)',
     },
+    // local：可复现 wheel PE TimeDateStamp；/Brepro 仅作用于 shared/exe（llvm-lib 静态库不接受）
     {
       name: "msvc-link-brepro-exe-shared-only",
       before: `  foreach(flag_var CMAKE_SHARED_LINKER_FLAGS CMAKE_STATIC_LINKER_FLAGS
@@ -684,6 +779,7 @@ export function runPatch(options: { ptSrc: string }): void {
   ]);
 
   applyPoints(path.join(root, "aten/src/ATen/Context.cpp"), [
+    // #188114（未合）：v2.13.0 仍用 ckSupported()，增加 gfx1200/gfx1201
     {
       name: "ck-sdpa-gfx12-arch-list",
       before: [
@@ -704,6 +800,7 @@ export function runPatch(options: { ptSrc: string }): void {
   applyPoints(
     path.join(root, "aten/src/ATen/native/transformers/hip/flash_attn/ck/launch_kernel_pt.hpp"),
     [
+      // #188114（未合）：在 #144777/#155103 已有 gfx90a/gfx942/gfx950 guard 上增加 gfx120x
       {
         name: "kentry-pt-gfx12-guard",
         before:
@@ -725,6 +822,7 @@ export function runPatch(options: { ptSrc: string }): void {
   );
   const addMakeKernelPtSrc = path.join(repoRoot, "build/add-make-kernel-pt.py");
   const addMakeKernelPtDst = path.join(ckDir, "add_make_kernel_pt.py");
+  // local：部署 Python 版 add_make_kernel_pt，替代上游 #143695 add_make_kernel_pt.sh
   copyFileSync(addMakeKernelPtSrc, addMakeKernelPtDst);
   console.log(`  OK ck-add-make-kernel-pt-py: copied to ${addMakeKernelPtDst}`);
 
@@ -733,6 +831,7 @@ export function runPatch(options: { ptSrc: string }): void {
 
   const atenCmake = path.join(root, "aten/src/ATen/CMakeLists.txt");
   const atenPoints: PatchPoint[] = [
+    // #188114（未合）：aten arch 检测 whitelist 增加 gfx1200/gfx1201
     {
       name: "aten-ck-sdpa-arch-detect-foreach",
       before: `      set(_have_ck_sdpa_arch FALSE)
@@ -740,6 +839,7 @@ export function runPatch(options: { ptSrc: string }): void {
       after: `      set(_have_ck_sdpa_arch FALSE)
       foreach(ARCH gfx942 gfx950 ${gpuArchCmake})`,
     },
+    // #188114（未合）：_ck_sdpa_hip_arches 构建列表增加 gfx1200/gfx1201
     {
       name: "aten-ck-sdpa-hip-arches-foreach",
       before: `    foreach(ARCH gfx942 gfx950)
@@ -751,6 +851,7 @@ export function runPatch(options: { ptSrc: string }): void {
     },
   ];
   if (disableBwd) {
+    // local：CK_FMHA_DISABLE_BWD=1 时追加 inference-only aten/bwd stub 补丁
     atenPoints.push(...buildInferenceOnlyAtenPoints());
     applyPoints(path.join(ckDir, "mha_bwd_ck.hip"), buildMhaBwdCkStubPoints());
     applyPoints(
