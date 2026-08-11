@@ -53,7 +53,7 @@ Prep clones **`pytorch.build_commit`** (SHA or tag; `fetch origin <ref>` + `chec
 
 | Workflow | Purpose | Trigger |
 |----------|---------|---------|
-| **Build PyTorch CK SDPA serial (Windows gfx120x)** | Single-job full compile + ninja cache + wheel | **Manual only** |
+| **Build PyTorch CK SDPA serial (Windows gfx120x)** | Single-job full compile + worktree cache + wheel | **Manual only** |
 
 Push to `main` does **not** auto-trigger builds.
 
@@ -69,9 +69,21 @@ Push to `main` does **not** auto-trigger builds.
 
 | Job | Role | Timeout |
 |-----|------|---------|
-| `compile-and-wheel` | clone+patch, toolchain, ninja cache, `06.build` + `08.wheel`, CPU smoke test | 12 h |
+| `compile-and-wheel` | bootstrap (toolchain + worktree restore), `06.build` + `08.wheel`, CPU smoke test | 12 h |
 
-Cache keys include lock `toolchain`+`pytorch`+`compile` JSON SHA256 prefix (`-v2-{lockHash8}-`; excludes `wheel`/`release`) and three toolchain fingerprints (MSVC toolset / ROCm clang / pip toolchain); **exact match only** (no `restore-keys`). `use_cache=false` skips restore (`used=false`); cache is still saved after a successful compile.
+**Worktree cache** (entire `C:\pt\pytorch`: patched source + hipify + `build/`):
+
+- Key: `worktree-v1-{lockHash8}-{patchHash8}-{wheelHash8}-msvc{…}-rocmClang{…}-pipToolchain{…}`
+- `lockHash8`: lock `toolchain` + `pytorch` + `compile`
+- `patchHash8`: `04.patch.ts`, `04.hipify.ts`, `gpu-archs.ts`, `add-make-kernel-pt.py`
+- `wheelHash8`: lock `wheel`
+- `pipToolchain`: pip / setuptools / wheel / ninja / packaging / psutil / **cmake**
+- **Exact match only** (no `restore-keys`)
+- **hit**: skip prep / patch / hipify; incremental compile
+- **miss**: prep → patch → hipify → compile → save
+- `use_cache=false`: skip restore (still probes `exists`); save only after a **successful** compile
+
+A separate **pip toolchain cache** (`PIP_TOOLCHAIN_CACHE_KEY`) layers above worktree cache.
 
 ### Build stages
 

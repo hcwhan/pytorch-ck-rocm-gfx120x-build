@@ -2,10 +2,14 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { runCapture } from "../lib/exec.js";
-import { appendGithubOutput } from "../lib/github.js";
-import { buildNinjaCacheKey } from "../lib/ninja-cache-key.js";
+import { appendGithubEnv } from "../lib/github.js";
+import { buildPatchHash8 } from "../lib/pt-patch-hash.js";
+import { buildWorktreeCacheKey } from "../lib/worktree-cache-key.js";
 import { getRocmSdkPaths } from "../lib/rocm-sdk-paths.js";
-import { versionLockFileHash8 } from "../lib/version-lock.js";
+import {
+  versionLockFileHash8,
+  wheelLockHash8,
+} from "../lib/version-lock.js";
 
 const PYTHON = "python";
 
@@ -89,6 +93,7 @@ function fingerprintHash(payload: string): string {
 
 export function runToolchainFingerprint(options?: {
   workspaceRoot?: string;
+  exportGithubEnv?: boolean;
 }): void {
   const toolset = resolveMsvcToolset();
   const { coreRoot } = getRocmSdkPaths();
@@ -99,7 +104,15 @@ export function runToolchainFingerprint(options?: {
   console.log(`MSVC toolset: ${toolset} (fingerprint ${msvcHash})`);
   console.log(`ROCm clang: ${rocmClangVersion} (fingerprint ${rocmClangHash})`);
 
-  const pipPkgs = ["pip", "setuptools", "wheel", "ninja", "packaging", "psutil"];
+  const pipPkgs = [
+    "pip",
+    "setuptools",
+    "wheel",
+    "ninja",
+    "packaging",
+    "psutil",
+    "cmake",
+  ];
   const pipFreeze = runCapture(PYTHON, ["-m", "pip", "list", "--format=freeze"]);
   const pipVersions = pipPkgs.map((pkg) => {
     const line = pipFreeze
@@ -118,15 +131,23 @@ export function runToolchainFingerprint(options?: {
 
   if (options?.workspaceRoot) {
     const lockHash = versionLockFileHash8(options.workspaceRoot);
-    const cacheKey = buildNinjaCacheKey({
-      lockHash,
+    const patchHash = buildPatchHash8(options.workspaceRoot);
+    const wheelHash = wheelLockHash8(options.workspaceRoot);
+    const cacheKey = buildWorktreeCacheKey({
+      lockHash8: lockHash,
+      patchHash8: patchHash,
+      wheelHash8: wheelHash,
       msvcHash,
       rocmClangHash,
       pipToolchainHash,
     });
     console.log(`VERSION.lock.json fingerprint: ${lockHash}`);
-    console.log(`Ninja cache key: ${cacheKey}`);
-    appendGithubOutput({ "cache-key": cacheKey });
+    console.log(`Patch inputs fingerprint: ${patchHash}`);
+    console.log(`Wheel lock fingerprint: ${wheelHash}`);
+    console.log(`Worktree cache key: ${cacheKey}`);
+    if (options.exportGithubEnv) {
+      appendGithubEnv({ WORKTREE_CACHE_KEY: cacheKey });
+    }
     return;
   }
 

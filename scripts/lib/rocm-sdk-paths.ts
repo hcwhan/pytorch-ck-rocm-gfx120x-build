@@ -24,12 +24,7 @@ print(f"CORE_ROOT={core_root}")
 print(f"DEVEL_ROOT={devel_root}")
 `.trim();
 
-export type RocmSdkPaths = {
-  coreRoot: string;
-  develRoot: string;
-};
-
-export function getRocmSdkPaths(): RocmSdkPaths {
+export function getRocmSdkPaths(): { coreRoot: string; develRoot: string } {
   const output = runCapture(PYTHON, ["-c", PY_DISCOVER]);
   const coreRootLine = output
     .split(/\r?\n/)

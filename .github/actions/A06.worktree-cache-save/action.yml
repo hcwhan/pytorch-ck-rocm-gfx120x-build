@@ -1,18 +1,18 @@
-name: Save PT source cache
-description: 保存 clone 后、patch 前的 PyTorch 源码树（含 submodule 与 .pt-prep-stamp.json）
+name: Save worktree cache
+description: 保存 patch+hipify+build/ 整棵 PyTorch 工作树（含 .worktree-stamp.json）
 
 inputs:
   pt-src:
     description: PyTorch 源码根目录
     required: true
   cache-key:
-    description: PT_SRC_CACHE_KEY（与 A05 restore 相同）
+    description: WORKTREE_CACHE_KEY（与 A05 restore 相同）
     required: true
 
 runs:
   using: composite
   steps:
-    - name: Save PT source cache
+    - name: Save worktree cache
       if: inputs.cache-key != ''
       uses: actions/cache/save@v6
       with:

@@ -4,7 +4,6 @@ import path from "node:path";
 import { z } from "zod";
 import { formatCkTargetsFlag } from "./gpu-archs.js";
 import { buildPipToolchainCacheKey } from "./pip-cache-key.js";
-import { buildPtSrcCacheKey } from "./pt-src-cache-key.js";
 
 const gitShaSchema = z
   .string()
@@ -59,7 +58,6 @@ export type VersionLockVars = {
   PYTORCH_REPO: string;
   PYTORCH_BUILD_COMMIT: string;
   PYTORCH_BUILD_COMMIT_DATE: string;
-  PT_SRC_CACHE_KEY: string;
   SOURCE_DATE_EPOCH: string;
   WHEEL_ARTIFACT_NAME: string;
   EXPECTED_WHEEL_PATTERN: string;
@@ -79,11 +77,11 @@ function pythonWheelTag(python: string): string {
 }
 
 /** PEP 440: wheel 文件名中 local version 的 `-`/`_` 规范化为 `.`。 */
-export function wheelFilenameLocalVersion(localVersion: string): string {
+function wheelFilenameLocalVersion(localVersion: string): string {
   return localVersion.replace(/[-_]/g, ".");
 }
 
-export function expectedWheelPattern(
+function expectedWheelPattern(
   localVersion: string,
   python: string,
 ): string {
@@ -92,8 +90,8 @@ export function expectedWheelPattern(
   return `torch-*+${filenameLocal}*-${tag}-${tag}-win_amd64.whl`;
 }
 
-/** Ninja cache lockHash8：仅 toolchain + pytorch + compile（不含 wheel/release）。 */
-function ninjaCacheLockPayload(
+/** Worktree cache lockHash8：toolchain + pytorch + compile（不含 wheel/release）。 */
+function worktreeCacheLockPayload(
   lock: Pick<
     z.infer<typeof versionLockSchema>,
     "toolchain" | "pytorch" | "compile"
@@ -106,7 +104,9 @@ function ninjaCacheLockPayload(
   });
 }
 
-export function versionLockFileHash8(workspaceRoot: string): string {
+function readVersionLockParsed(workspaceRoot: string): z.infer<
+  typeof versionLockSchema
+> {
   const lockPath = path.join(workspaceRoot, "VERSION.lock.json");
   let parsed: unknown;
   try {
@@ -115,9 +115,21 @@ export function versionLockFileHash8(workspaceRoot: string): string {
     throw new Error(`VERSION.lock.json not found or invalid JSON: ${lockPath}`);
   }
 
-  const lock = versionLockSchema.parse(parsed);
+  return versionLockSchema.parse(parsed);
+}
+
+export function versionLockFileHash8(workspaceRoot: string): string {
+  const lock = readVersionLockParsed(workspaceRoot);
   return createHash("sha256")
-    .update(ninjaCacheLockPayload(lock), "utf8")
+    .update(worktreeCacheLockPayload(lock), "utf8")
+    .digest("hex")
+    .slice(0, 8);
+}
+
+export function wheelLockHash8(workspaceRoot: string): string {
+  const lock = readVersionLockParsed(workspaceRoot);
+  return createHash("sha256")
+    .update(JSON.stringify(lock.wheel), "utf8")
     .digest("hex")
     .slice(0, 8);
 }
@@ -152,15 +164,7 @@ function normalizeCommitDate(raw: string): {
 }
 
 export function readVersionLock(workspaceRoot: string): VersionLockVars {
-  const lockPath = path.join(workspaceRoot, "VERSION.lock.json");
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(lockPath, "utf8"));
-  } catch {
-    throw new Error(`VERSION.lock.json not found or invalid JSON: ${lockPath}`);
-  }
-
-  const lock = versionLockSchema.parse(parsed);
+  const lock = readVersionLockParsed(workspaceRoot);
   const { isoUtc, epochSeconds } = normalizeCommitDate(
     lock.pytorch.build_commit_date,
   );
@@ -181,10 +185,6 @@ export function readVersionLock(workspaceRoot: string): VersionLockVars {
     PYTORCH_REPO: lock.pytorch.repo,
     PYTORCH_BUILD_COMMIT: lock.pytorch.build_commit,
     PYTORCH_BUILD_COMMIT_DATE: isoUtc,
-    PT_SRC_CACHE_KEY: buildPtSrcCacheKey(
-      lock.pytorch.repo,
-      lock.pytorch.build_commit,
-    ),
     SOURCE_DATE_EPOCH: String(epochSeconds),
     WHEEL_ARTIFACT_NAME: lock.wheel.wheel_artifact_name,
     EXPECTED_WHEEL_PATTERN: expectedWheelPattern(

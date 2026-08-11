@@ -53,7 +53,7 @@
 
 | Workflow | 用途 | 触发 |
 |----------|------|------|
-| **Build PyTorch CK SDPA serial (Windows gfx120x)** | 单 job 全量编译 + ninja cache + 打 wheel | **仅手动** |
+| **Build PyTorch CK SDPA serial (Windows gfx120x)** | 单 job 全量编译 + worktree cache + 打 wheel | **仅手动** |
 
 > 推送到 `main` **不会**自动触发编译。
 
@@ -69,9 +69,21 @@
 
 | Job | 作用 | 超时 |
 |-----|------|------|
-| `compile-and-wheel` | clone+patch、toolchain、ninja cache、`06.build` + `08.wheel`、CPU smoke test | 12 h |
+| `compile-and-wheel` | bootstrap（toolchain + worktree restore）、`06.build` + `08.wheel`、CPU smoke test | 12 h |
 
-- Cache key 含 lock `toolchain`+`pytorch`+`compile` JSON SHA256 前 8 位（`-v2-{lockHash8}-`，不含 `wheel`/`release`）及三段工具链指纹（MSVC 工具集 / ROCm clang / pip 工具链）；**仅精确匹配**（无 `restore-keys`）。`use_cache=false` 时不 restore（`used=false`），compile 成功后仍 save。
+**Worktree cache**（整棵 `C:\pt\pytorch`：patch 后源码 + hipify + `build/`）：
+
+- Key：`worktree-v1-{lockHash8}-{patchHash8}-{wheelHash8}-msvc{…}-rocmClang{…}-pipToolchain{…}`
+- `lockHash8`：lock `toolchain` + `pytorch` + `compile`
+- `patchHash8`：`04.patch.ts`、`04.hipify.ts`、`gpu-archs.ts`、`add-make-kernel-pt.py`
+- `wheelHash8`：lock `wheel`
+- `pipToolchain`：pip / setuptools / wheel / ninja / packaging / psutil / **cmake**
+- **仅精确匹配**（无 `restore-keys`）
+- **hit**：跳过 prep / patch / hipify，直接增量 compile
+- **miss**：prep → patch → hipify → compile → save
+- `use_cache=false`：不 restore（仍 lookup 记录 `exists`）；仅 compile **成功**时 save
+
+另有独立 **pip toolchain cache**（`PIP_TOOLCHAIN_CACHE_KEY`），与 worktree cache 分层。
 
 ### 构建阶段
 

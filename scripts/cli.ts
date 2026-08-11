@@ -2,6 +2,10 @@
 import { Command } from "commander";
 import { runConfig } from "./commands/01.config.js";
 import { runPrep } from "./commands/03.prep.js";
+import {
+  runWorktreeStampVerify,
+  runWorktreeStampWrite,
+} from "./commands/03.worktree-stamp.js";
 import { runPatch } from "./commands/04.patch.js";
 import { runHipify } from "./commands/04.hipify.js";
 import { runToolchainFingerprint } from "./commands/05.toolchain-fingerprint.js";
@@ -30,9 +34,36 @@ program
   .command("03.prep")
   .description("按 pin 的 SHA 或 tag clone PyTorch 源码")
   .requiredOption("--pt-src <path>")
-  .option("--use-cache", "命中 prep stamp 时跳过 clone")
   .action((opts) => {
-    runPrep({ ptSrc: opts.ptSrc, useCache: Boolean(opts.useCache) });
+    runPrep({ ptSrc: opts.ptSrc });
+  });
+
+program
+  .command("03.worktree-stamp")
+  .description("写入或校验 patch+hipify+build 后的 worktree stamp")
+  .requiredOption("--pt-src <path>")
+  .requiredOption("-w, --workspace-root <path>")
+  .option("--write", "patch+hipify 完成后写入 stamp")
+  .option("--verify", "worktree cache restore 后校验 stamp")
+  .action((opts) => {
+    if (opts.write && opts.verify) {
+      throw new Error("03.worktree-stamp: use only one of --write or --verify");
+    }
+    if (opts.write) {
+      runWorktreeStampWrite({
+        ptSrc: opts.ptSrc,
+        workspaceRoot: opts.workspaceRoot,
+      });
+      return;
+    }
+    if (opts.verify) {
+      runWorktreeStampVerify({
+        ptSrc: opts.ptSrc,
+        workspaceRoot: opts.workspaceRoot,
+      });
+      return;
+    }
+    throw new Error("03.worktree-stamp: specify --write or --verify");
   });
 
 program
@@ -53,11 +84,13 @@ program
 
 program
   .command("05.toolchain-fingerprint")
-  .description("输出 MSVC/clang 与 pip 工具链缓存指纹")
+  .description("输出 worktree cache key（lock+patch+wheel+toolchain 指纹）")
   .option("-w, --workspace-root <path>", "仓库根目录（输出 cache-key）")
+  .option("--export-github-env", "将 WORKTREE_CACHE_KEY 追加到 GITHUB_ENV")
   .action((opts) => {
     runToolchainFingerprint({
       workspaceRoot: opts.workspaceRoot,
+      exportGithubEnv: Boolean(opts.exportGithubEnv),
     });
   });
 

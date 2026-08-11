@@ -1,15 +1,13 @@
 name: PT job bootstrap
-description: Node/npm、01.config、可选 prep/patch 与工具链（使用前需 job 级 actions/checkout）
+description: Node/npm、01.config、toolchain、worktree cache、条件 prep/patch/hipify（使用前需 job 级 actions/checkout）
 
-inputs:
-  prep-source:
-    description: 运行 03.prep 与 04.patch（需 PT_SRC job env）
-    required: false
-    default: "true"
-  setup-toolchain:
-    description: 运行 A01.pt-rocm-toolchain（从 01.config 读取 PYTHON_* / ROCM_* / PIP_TOOLCHAIN_CACHE_KEY）
-    required: false
-    default: "true"
+outputs:
+  worktree-cache-exists:
+    description: worktree cache 远程条目是否存在
+    value: ${{ steps.worktree-cache.outputs.cache-exists }}
+  worktree-cache-used:
+    description: 已 restore worktree cache
+    value: ${{ steps.worktree-cache.outputs.cache-used }}
 
 runs:
   using: composite
@@ -28,43 +26,49 @@ runs:
       shell: pwsh
       run: npx tsx scripts/cli.ts 01.config -w $env:GITHUB_WORKSPACE --export-github-env
 
-    - name: Restore PT source cache
-      if: inputs.prep-source == 'true'
-      id: pt-src-cache
-      uses: "./.github/actions/A05.pt-src-cache-restore"
-      with:
-        pt-src: ${{ env.PT_SRC }}
-
-    - name: Clone pytorch source
-      if: inputs.prep-source == 'true'
-      id: prep-clone
-      shell: pwsh
-      run: |
-        git config --global core.longpaths true
-        npx tsx scripts/cli.ts 03.prep --pt-src $env:PT_SRC --use-cache
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-    - name: Save PT source cache
-      if: inputs.prep-source == 'true' && steps.prep-clone.outputs.cloned == 'true'
-      uses: "./.github/actions/A06.pt-src-cache-save"
-      with:
-        pt-src: ${{ env.PT_SRC }}
-        cache-key: ${{ env.PT_SRC_CACHE_KEY }}
-
-    - name: Patch and hipify pytorch source
-      if: inputs.prep-source == 'true'
-      shell: pwsh
-      run: |
-        npx tsx scripts/cli.ts 04.patch --pt-src $env:PT_SRC
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        npx tsx scripts/cli.ts 04.hipify --pt-src $env:PT_SRC
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
     - name: Setup ROCm toolchain
-      if: inputs.setup-toolchain == 'true'
       uses: "./.github/actions/A01.pt-rocm-toolchain"
       with:
         python-version: ${{ env.PYTHON_VERSION }}
         rocm-index: ${{ env.ROCM_INDEX }}
         rocm-version: ${{ env.ROCM_VERSION }}
         pip-cache-key: ${{ env.PIP_TOOLCHAIN_CACHE_KEY }}
+
+    - name: Fingerprint worktree cache key
+      shell: pwsh
+      run: |
+        npx tsx scripts/cli.ts 05.toolchain-fingerprint -w $env:GITHUB_WORKSPACE --export-github-env
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    - name: Restore worktree cache
+      id: worktree-cache
+      uses: "./.github/actions/A05.worktree-cache-restore"
+      with:
+        pt-src: ${{ env.PT_SRC }}
+        use-cache: ${{ env.USE_CACHE }}
+
+    - name: Verify restored worktree
+      if: steps.worktree-cache.outputs.cache-used == 'true'
+      shell: pwsh
+      run: |
+        npx tsx scripts/cli.ts 03.worktree-stamp --pt-src $env:PT_SRC -w $env:GITHUB_WORKSPACE --verify
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    - name: Clone pytorch source
+      if: steps.worktree-cache.outputs.cache-used != 'true'
+      shell: pwsh
+      run: |
+        git config --global core.longpaths true
+        npx tsx scripts/cli.ts 03.prep --pt-src $env:PT_SRC
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    - name: Patch and hipify pytorch source
+      if: steps.worktree-cache.outputs.cache-used != 'true'
+      shell: pwsh
+      run: |
+        npx tsx scripts/cli.ts 04.patch --pt-src $env:PT_SRC
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        npx tsx scripts/cli.ts 04.hipify --pt-src $env:PT_SRC
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        npx tsx scripts/cli.ts 03.worktree-stamp --pt-src $env:PT_SRC -w $env:GITHUB_WORKSPACE --write
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

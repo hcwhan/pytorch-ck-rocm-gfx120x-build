@@ -24,7 +24,7 @@ export function parseGpuArchList(gpuArchs: string): string[] {
   return parts;
 }
 
-export function hipArchToCkTarget(hipArch: string): string {
+function hipArchToCkTarget(hipArch: string): string {
   const normalized = hipArch.trim().toLowerCase();
   const ckTarget = HIP_TO_CK_TARGET[normalized];
   if (!ckTarget) {
@@ -35,7 +35,7 @@ export function hipArchToCkTarget(hipArch: string): string {
   return ckTarget;
 }
 
-export function deriveCkTargetFamilies(gpuArchs: string): string[] {
+function deriveCkTargetFamilies(gpuArchs: string): string[] {
   const families = new Set<string>();
   for (const arch of parseGpuArchList(gpuArchs)) {
     families.add(hipArchToCkTarget(arch));

@@ -9,7 +9,7 @@ const buildCacheEntrySchema = z.object({
   used: z.boolean(),
 });
 
-export type BuildCacheEntry = z.infer<typeof buildCacheEntrySchema>;
+type BuildCacheEntry = z.infer<typeof buildCacheEntrySchema>;
 
 export function readBuildCaches(inputPath: string): BuildCacheEntry[] {
   const resolved = path.resolve(inputPath);

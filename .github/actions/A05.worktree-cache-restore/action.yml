@@ -1,0 +1,54 @@
+name: Restore worktree cache
+description: 恢复 patch+hipify+build/ 整棵 PyTorch 工作树（精确 WORKTREE_CACHE_KEY；无 restore-keys）
+
+inputs:
+  pt-src:
+    description: PyTorch 源码根目录
+    required: true
+  use-cache:
+    description: true 时 restore worktree；false 时仅 lookup
+    required: false
+    default: "true"
+
+outputs:
+  cache-exists:
+    description: WORKTREE_CACHE_KEY 对应的远程缓存条目是否存在
+    value: ${{ steps.worktree-cache.outputs.cache-exists }}
+  cache-used:
+    description: 已将缓存 restore 到 pt-src
+    value: ${{ steps.worktree-cache.outputs.cache-used }}
+
+runs:
+  using: composite
+  steps:
+    - name: Restore worktree cache
+      if: inputs.use-cache == 'true'
+      uses: actions/cache/restore@v6
+      id: cache-restore
+      with:
+        path: ${{ inputs.pt-src }}
+        key: ${{ env.WORKTREE_CACHE_KEY }}
+
+    - name: Lookup worktree cache (restore skipped)
+      if: inputs.use-cache != 'true'
+      uses: actions/cache/restore@v6
+      id: cache-lookup
+      with:
+        path: ${{ inputs.pt-src }}
+        key: ${{ env.WORKTREE_CACHE_KEY }}
+        lookup-only: true
+
+    - name: Resolve worktree cache outputs
+      id: worktree-cache
+      shell: pwsh
+      run: |
+        if ('${{ inputs.use-cache }}' -eq 'true') {
+          $exists = '${{ steps.cache-restore.outputs.cache-hit }}' -eq 'true'
+          $used = $exists
+        } else {
+          $exists = '${{ steps.cache-lookup.outputs.cache-hit }}' -eq 'true'
+          $used = $false
+        }
+        Write-Host "Worktree cache restore: exists=$exists used=$used key=$env:WORKTREE_CACHE_KEY"
+        "cache-exists=$exists" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "cache-used=$used" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8

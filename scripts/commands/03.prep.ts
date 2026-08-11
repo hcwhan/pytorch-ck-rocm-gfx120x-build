@@ -1,13 +1,7 @@
 import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { run, runCapture } from "../lib/exec.js";
-import { appendGithubOutput } from "../lib/github.js";
-import {
-  isPreparedSourceTree,
-  readPrepStamp,
-  verifyPrepStampAgainstLock,
-  writePrepStamp,
-} from "../lib/pt-prep-stamp.js";
+import { writePrepStamp } from "../lib/pt-prep-stamp.js";
 import { requireLockEnv } from "../lib/require-env.js";
 
 function configureGitFetchParallelism(): void {
@@ -15,14 +9,7 @@ function configureGitFetchParallelism(): void {
   run("git", ["config", "--global", "submodule.fetchJobs", "0"]);
 }
 
-function maybeAppendPrepOutput(cloned: boolean): void {
-  if (!process.env.GITHUB_OUTPUT) {
-    return;
-  }
-  appendGithubOutput({ cloned: cloned ? "true" : "false" });
-}
-
-export function runPrep(options: { ptSrc: string; useCache?: boolean }): void {
+export function runPrep(options: { ptSrc: string }): void {
   const pytorchRepo = requireLockEnv("PYTORCH_REPO");
   const pytorchBuildCommit = requireLockEnv("PYTORCH_BUILD_COMMIT");
   const pytorchBuildCommitDate = requireLockEnv("PYTORCH_BUILD_COMMIT_DATE");
@@ -30,30 +17,6 @@ export function runPrep(options: { ptSrc: string; useCache?: boolean }): void {
 
   console.log(`Using pytorch repo: ${pytorchRepo}`);
   console.log(`Using pytorch build ref: ${pytorchBuildCommit}`);
-
-  if (options.useCache) {
-    const stamp = readPrepStamp(root);
-    if (
-      stamp &&
-      verifyPrepStampAgainstLock(stamp, {
-        repo: pytorchRepo,
-        buildCommit: pytorchBuildCommit,
-        buildCommitDate: pytorchBuildCommitDate,
-      }) &&
-      isPreparedSourceTree(root)
-    ) {
-      console.log(
-        `Prep stamp valid, skipping clone (commit=${stamp.resolved_commit})`,
-      );
-      maybeAppendPrepOutput(false);
-      return;
-    }
-    if (stamp) {
-      console.log(
-        "Prep stamp invalid or lock mismatch; re-cloning pytorch source",
-      );
-    }
-  }
 
   configureGitFetchParallelism();
 
@@ -163,5 +126,4 @@ export function runPrep(options: { ptSrc: string; useCache?: boolean }): void {
   console.log(
     `Prepared pytorch at ${root} (ref=${pytorchBuildCommit}, commit=${resolvedCommit})`,
   );
-  maybeAppendPrepOutput(true);
 }

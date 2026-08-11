@@ -8,7 +8,7 @@ on:
         required: false
         default: "4"
       use_cache:
-        description: "存在匹配条目时 restore ninja 缓存到 build/（false 时仅 lookup）"
+        description: "存在匹配条目时 restore worktree（含 build/）；false 时 miss 路径仍 save"
         type: boolean
         required: false
         default: true
@@ -41,19 +41,15 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Bootstrap build job
+        id: bootstrap
         uses: "./.github/actions/A00.pt-job-bootstrap"
 
-      - name: Fingerprint toolchain for cache key
-        id: toolchain-fingerprint
-        shell: pwsh
-        run: npx tsx scripts/cli.ts 05.toolchain-fingerprint -w $env:GITHUB_WORKSPACE
-
-      - name: Compile PyTorch with ninja cache
-        id: compile
+      - name: Compile PyTorch with worktree cache
         uses: "./.github/actions/A03.pt-build-with-cache"
         with:
           pt-src: ${{ env.PT_SRC }}
-          cache-key: ${{ steps.toolchain-fingerprint.outputs.cache-key }}
+          cache-key: ${{ env.WORKTREE_CACHE_KEY }}
+          cache-exists: ${{ steps.bootstrap.outputs.worktree-cache-exists }}
           use-cache: ${{ env.USE_CACHE }}
           run: npx tsx scripts/cli.ts 06.build --pt-src $env:PT_SRC
 
@@ -62,9 +58,9 @@ jobs:
         run: |
           $entry = [ordered]@{
             opt_dim = $env:CK_OPT_DIM
-            key = '${{ steps.toolchain-fingerprint.outputs.cache-key }}'
-            exists = '${{ steps.compile.outputs.cache-exists }}' -eq 'true'
-            used = '${{ steps.compile.outputs.cache-used }}' -eq 'true'
+            key = $env:WORKTREE_CACHE_KEY
+            exists = '${{ steps.bootstrap.outputs.worktree-cache-exists }}' -eq 'true'
+            used = '${{ steps.bootstrap.outputs.worktree-cache-used }}' -eq 'true'
           }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           $entry | ConvertTo-Json -Depth 3 -AsArray | Out-File -FilePath dist/build-caches.json -Encoding utf8

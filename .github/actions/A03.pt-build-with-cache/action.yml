@@ -1,65 +1,51 @@
-name: PT build with ninja cache
-description: 恢复 ninja 缓存、运行构建 CLI 步骤、保存缓存
+name: PT build with worktree cache
+description: 运行编译 CLI，并在结束后保存整棵 worktree 缓存
 
 inputs:
   pt-src:
     description: PyTorch 源码根目录
     required: true
   cache-key:
-    description: 05.toolchain-fingerprint 输出的主 cache key
+    description: WORKTREE_CACHE_KEY
     required: true
+  cache-exists:
+    description: bootstrap restore 时远程 cache 是否存在
+    required: false
+    default: "false"
   use-cache:
-    description: true 时从缓存 restore build/；false 时仅 lookup
+    description: true 时在 compile 后 save worktree；false 时仅成功时 save
     required: false
     default: "true"
   run:
-    description: 在 cache restore 与 save 之间执行的 shell 脚本
+    description: 编译 shell 脚本
     required: true
-
-outputs:
-  cache-exists:
-    description: cache-primary-key 对应的远程缓存条目是否存在
-    value: ${{ steps.pt-build-cache.outputs.cache-exists }}
-  cache-used:
-    description: 已将缓存 restore 到 build/
-    value: ${{ steps.pt-build-cache.outputs.cache-used }}
 
 runs:
   using: composite
   steps:
-    - name: Restore ninja incremental build cache
-      id: pt-build-cache
-      uses: "./.github/actions/A02.pt-ninja-cache-restore"
-      with:
-        pt-src: ${{ inputs.pt-src }}
-        cache-key: ${{ inputs.cache-key }}
-        use-cache: ${{ inputs.use-cache }}
-
     - name: Run build CLI step
       id: run-build
       shell: pwsh
       run: ${{ inputs.run }}
 
-    - name: Delete stale ninja cache entry
-      # cache-exists 时先 delete，以便 save 刷新（actions/cache/save 对已存在 key 会失败）。
-      # use-cache=true：成功或失败均 delete（允许部分 save）。
-      # use-cache=false：仅成功时 delete（仅 lookup 冷构建刷新路径）。
-      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && steps.pt-build-cache.outputs.cache-exists == 'true'
+    - name: Delete stale worktree cache entry
+      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && inputs.cache-exists == 'true' && inputs.cache-key != ''
       shell: pwsh
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        $key = [uri]::EscapeDataString('${{ steps.pt-build-cache.outputs.cache-primary-key }}')
+        $key = [uri]::EscapeDataString('${{ inputs.cache-key }}')
         $ref = [uri]::EscapeDataString('${{ github.ref }}')
         gh api --method DELETE "/repos/${{ github.repository }}/actions/caches?key=$key&ref=$ref"
         if ($LASTEXITCODE -ne 0) {
-          Write-Error "Failed to delete stale ninja cache entry (key=$key, ref=$ref, exit=$LASTEXITCODE)"
+          Write-Error "Failed to delete stale worktree cache entry (key=$key, ref=$ref, exit=$LASTEXITCODE)"
           exit $LASTEXITCODE
         }
 
-    - name: Save ninja incremental build cache
-      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success')
-      uses: "./.github/actions/A04.pt-ninja-cache-save"
+    - name: Save worktree cache
+      id: save-worktree-cache
+      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && inputs.cache-key != ''
+      uses: "./.github/actions/A06.worktree-cache-save"
       with:
         pt-src: ${{ inputs.pt-src }}
-        cache-primary-key: ${{ steps.pt-build-cache.outputs.cache-primary-key }}
+        cache-key: ${{ inputs.cache-key }}
