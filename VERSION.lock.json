@@ -15,11 +15,11 @@
     "ck_disable_bwd": true
   },
   "wheel": {
-    "wheel_local_version": "rocm7.14.0.ck.gfx120x",
-    "wheel_artifact_name": "torch-ck-gfx120x-cp312-rocm7.14.0"
+    "wheel_local_version": "ck-rocm7.14.0-gfx120x",
+    "wheel_artifact_name": "torch-ck-cp312-rocm7.14.0-gfx120x"
   },
   "release": {
-    "release_tag_prefix": "torch-ck-gfx120x-cp312-rocm7.14.0",
+    "release_tag_prefix": "torch-ck-cp312-rocm7.14.0-gfx120x",
     "release_title_prefix": "PyTorch CK SDPA gfx120x Windows"
   }
 }

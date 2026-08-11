@@ -47,7 +47,7 @@ Prep clones **`pytorch.build_commit`** (`fetch` + `checkout FETCH_HEAD`), then `
 - **`PYTORCH_ROCM_ARCH`** = lock `compile.gpu_archs` (semicolon-separated on Windows)
 - **`CK_TARGETS`** = derived from `compile.gpu_archs` (currently `gfx1200;gfx1201` → `--targets gfx12`)
 - CK FMHA **`ck_opt_dim`** = lock `compile.ck_opt_dim` (currently `32,64,128,256`)
-- Wheel local tag: `rocm7.14.0.ck.gfx120x` (see `wheel.wheel_local_version`)
+- Wheel local tag: `ck-rocm7.14.0-gfx120x` (see `wheel.wheel_local_version`)
 
 ## Trigger
 
@@ -94,18 +94,18 @@ GitHub Release (uploaded after a successful build when `publish_release=true`):
 
 | Field | Example |
 |-------|---------|
-| Tag | `torch-ck-gfx120x-cp312-rocm7.14.0-serial-build123` |
+| Tag | `torch-ck-cp312-rocm7.14.0-gfx120x-serial-build123` |
 | Title | `PyTorch CK SDPA gfx120x Windows 2026.08.10 19:00:00` |
 
 ```powershell
 gh release list
-gh release download torch-ck-gfx120x-cp312-rocm7.14.0-serial-build123 -D .\dist
+gh release download torch-ck-cp312-rocm7.14.0-gfx120x-serial-build123 -D .\dist
 ```
 
 Expected wheel name (derived from `wheel.wheel_local_version` + `toolchain.python`):
 
 ```text
-torch-*+rocm7.14.0.ck.gfx120x*-cp312-cp312-win_amd64.whl
+torch-*+ck-rocm7.14.0-gfx120x*-cp312-cp312-win_amd64.whl
 ```
 
 ## Verification

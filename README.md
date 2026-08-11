@@ -47,7 +47,7 @@
 - **`PYTORCH_ROCM_ARCH`** = lock `compile.gpu_archs`（Windows 分号分隔）
 - **`CK_TARGETS`** = 由 `compile.gpu_archs` 推导（当前 `gfx1200;gfx1201` → `--targets gfx12`）
 - CK FMHA **`ck_opt_dim`** = lock `compile.ck_opt_dim`（当前 `32,64,128,256`）
-- wheel local tag：`rocm7.14.0.ck.gfx120x`（见 `wheel.wheel_local_version`）
+- wheel local tag：`ck-rocm7.14.0-gfx120x`（见 `wheel.wheel_local_version`）
 
 ## 触发方式
 
@@ -94,7 +94,7 @@ GitHub Release（构建成功后自动上传；`publish_release=true` 时）：
 
 | 字段 | 示例 |
 |------|------|
-| Tag | `torch-ck-gfx120x-cp312-rocm7.14.0-serial-build123` |
+| Tag | `torch-ck-cp312-rocm7.14.0-gfx120x-serial-build123` |
 | 标题 | `PyTorch CK SDPA gfx120x Windows 2026.08.10 19:00:00` |
 
 - `torch-*.whl`
@@ -103,13 +103,13 @@ GitHub Release（构建成功后自动上传；`publish_release=true` 时）：
 
 ```powershell
 gh release list
-gh release download torch-ck-gfx120x-cp312-rocm7.14.0-serial-build123 -D .\dist
+gh release download torch-ck-cp312-rocm7.14.0-gfx120x-serial-build123 -D .\dist
 ```
 
 预期 wheel 文件名（由 `wheel.wheel_local_version` + `toolchain.python` 推导）：
 
 ```text
-torch-*+rocm7.14.0.ck.gfx120x*-cp312-cp312-win_amd64.whl
+torch-*+ck-rocm7.14.0-gfx120x*-cp312-cp312-win_amd64.whl
 ```
 
 ## 验证
