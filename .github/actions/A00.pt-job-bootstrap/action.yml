@@ -90,3 +90,9 @@ runs:
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         npx tsx scripts/cli.ts 05.hipify --pt-src $env:PT_SRC
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    - name: Pin worktree mtimes
+      shell: pwsh
+      run: |
+        npx tsx scripts/cli.ts 07.pin-mtimes --pt-src $env:PT_SRC
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

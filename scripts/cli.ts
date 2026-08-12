@@ -6,10 +6,11 @@ import { runPrep } from "./commands/03.prep.js";
 import { runPatch } from "./commands/04.patch.js";
 import { runHipify } from "./commands/05.hipify.js";
 import { runVerifyBootstrap } from "./commands/06.verify-bootstrap.js";
-import { runBuild } from "./commands/07.build.js";
-import { runWheel } from "./commands/08.wheel.js";
-import { runVerify } from "./commands/09.verify.js";
-import { runPublish } from "./commands/10.publish.js";
+import { runPinMtimes } from "./commands/07.pin-mtimes.js";
+import { runBuild } from "./commands/08.build.js";
+import { runWheel } from "./commands/09.wheel.js";
+import { runVerify } from "./commands/10.verify.js";
+import { runPublish } from "./commands/11.publish.js";
 
 const program = new Command();
 
@@ -75,7 +76,17 @@ program
   });
 
 program
-  .command("07.build")
+  .command("07.pin-mtimes")
+  .description(
+    "将 PT 工作树 mtime 固定为 VERSION.lock pytorch.build_commit_date（抑制 cache restore 后 cmake glob 重配）",
+  )
+  .requiredOption("--pt-src <path>")
+  .action((opts) => {
+    runPinMtimes({ ptSrc: opts.ptSrc });
+  });
+
+program
+  .command("08.build")
   .description("编译 PyTorch（setup.py build；有 build/ 时上游自动跳过 cmake configure）")
   .requiredOption("--pt-src <path>")
   .action((opts) => {
@@ -83,7 +94,7 @@ program
   });
 
 program
-  .command("08.wheel")
+  .command("09.wheel")
   .description("打包 torch wheel（setup.py bdist_wheel）")
   .requiredOption("--pt-src <path>")
   .requiredOption("--dist-dir <path>")
@@ -95,7 +106,7 @@ program
   });
 
 program
-  .command("09.verify")
+  .command("10.verify")
   .description("CPU wheel 冒烟测试")
   .requiredOption("--dist-dir <path>")
   .requiredOption(
@@ -110,7 +121,7 @@ program
   });
 
 program
-  .command("10.publish")
+  .command("11.publish")
   .description("准备 GitHub Release 元数据")
   .requiredOption("--dist-dir <path>")
   .requiredOption("--workflow-name <name>")
