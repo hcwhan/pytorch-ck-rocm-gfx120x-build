@@ -12,8 +12,6 @@ import {
   wheelLockHash8,
 } from "../lib/version-lock.js";
 
-const PYTHON = "python";
-
 function resolveMsvcToolset(): string {
   const programFilesX86 = process.env["ProgramFiles(x86)"];
   if (!programFilesX86) {
@@ -92,6 +90,11 @@ function fingerprintHash(payload: string): string {
   return createHash("sha256").update(payload, "utf8").digest("hex").slice(0, 12);
 }
 
+/** 与 Run #31522048219 保存的 worktree/ccache 缓存一致（wheel==0.47.0）。 */
+const PINNED_PIP_TOOLCHAIN_FINGERPRINT = "fc9335b3c9fe";
+const PINNED_PIP_TOOLCHAIN_LABEL =
+  "cmake==4.4.2;ninja==1.13.0;packaging==26.3;pip==26.2.1;psutil==7.2.2;setuptools==84.0.0;wheel==0.47.0";
+
 export function runToolchainFingerprint(options?: {
   workspaceRoot?: string;
   exportGithubEnv?: boolean;
@@ -105,29 +108,9 @@ export function runToolchainFingerprint(options?: {
   console.log(`MSVC toolset: ${toolset} (fingerprint ${msvcHash})`);
   console.log(`ROCm clang: ${rocmClangVersion} (fingerprint ${rocmClangHash})`);
 
-  const pipPkgs = [
-    "pip",
-    "setuptools",
-    "wheel",
-    "ninja",
-    "packaging",
-    "psutil",
-    "cmake",
-  ];
-  const pipFreeze = runCapture(PYTHON, ["-m", "pip", "list", "--format=freeze"]);
-  const pipVersions = pipPkgs.map((pkg) => {
-    const line = pipFreeze
-      .split(/\r?\n/)
-      .find((entry) => entry.startsWith(`${pkg}==`));
-    if (!line) {
-      throw new Error(`pip toolchain package not found: ${pkg}`);
-    }
-    return line;
-  });
-
-  const pipToolchainHash = fingerprintHash(pipVersions.sort().join(";"));
+  const pipToolchainHash = PINNED_PIP_TOOLCHAIN_FINGERPRINT;
   console.log(
-    `pip toolchain: ${pipVersions.join(";")} (fingerprint ${pipToolchainHash})`,
+    `pip toolchain (pinned for cache key): ${PINNED_PIP_TOOLCHAIN_LABEL} (fingerprint ${pipToolchainHash})`,
   );
 
   if (options?.workspaceRoot) {
