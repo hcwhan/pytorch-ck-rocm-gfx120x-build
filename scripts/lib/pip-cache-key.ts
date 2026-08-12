@@ -4,6 +4,10 @@ function cacheKeyToken(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "-");
 }
 
+function cacheKeySegment(label: string, value: string): string {
+  return `${label}[${cacheKeyToken(value)}]`;
+}
+
 export function buildPipToolchainCacheKey(options: {
   pythonVersion: string;
   rocmVersion: string;
@@ -15,9 +19,9 @@ export function buildPipToolchainCacheKey(options: {
     .slice(0, 8);
 
   return [
-    "pt-pip-toolchain-v1",
-    `py${cacheKeyToken(options.pythonVersion)}`,
-    `rocm${cacheKeyToken(options.rocmVersion)}`,
-    `idx${indexHash}`,
+    "pt-pip-toolchain-v2",
+    cacheKeySegment("py", options.pythonVersion),
+    cacheKeySegment("rocm", options.rocmVersion),
+    cacheKeySegment("idx", indexHash),
   ].join("-");
 }

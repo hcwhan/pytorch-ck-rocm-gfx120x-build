@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { runCapture } from "../lib/exec.js";
@@ -6,6 +5,11 @@ import { appendGithubEnv } from "../lib/github.js";
 import { buildCcacheCacheKey } from "../lib/ccache-cache-key.js";
 import { buildPatchHash8 } from "../lib/pt-patch-hash.js";
 import { buildWorktreeCacheKey } from "../lib/worktree-cache-key.js";
+import {
+  parseRocmClangFullVersion,
+  resolveCmakeMinorVersion,
+  resolveNinjaMinorVersion,
+} from "../lib/build-tool-minor.js";
 import { getRocmSdkPaths } from "../lib/rocm-sdk-paths.js";
 import {
   versionLockFileHash8,
@@ -70,8 +74,8 @@ function resolveMsvcToolset(): string {
   return toolset;
 }
 
-function resolveRocmClangVersion(develRoot: string): string {
-  const clangExe = path.join(develRoot, "lib", "llvm", "bin", "clang.exe");
+function resolveRocmClangVersionLine(coreRoot: string): string {
+  const clangExe = path.join(coreRoot, "lib", "llvm", "bin", "clang.exe");
   if (!existsSync(clangExe)) {
     throw new Error(`ROCm clang not found: ${clangExe}`);
   }
@@ -86,55 +90,48 @@ function resolveRocmClangVersion(develRoot: string): string {
   return firstLine;
 }
 
-function fingerprintHash(payload: string): string {
-  return createHash("sha256").update(payload, "utf8").digest("hex").slice(0, 12);
-}
-
-/** 与 Run #31522048219 保存的 worktree/ccache 缓存一致（wheel==0.47.0）。 */
-const PINNED_PIP_TOOLCHAIN_FINGERPRINT = "fc9335b3c9fe";
-const PINNED_PIP_TOOLCHAIN_LABEL =
-  "cmake==4.4.2;ninja==1.13.0;packaging==26.3;pip==26.2.1;psutil==7.2.2;setuptools==84.0.0;wheel==0.47.0";
-
 export function runToolchainFingerprint(options?: {
   workspaceRoot?: string;
   exportGithubEnv?: boolean;
 }): void {
-  const toolset = resolveMsvcToolset();
+  const msvcVersion = resolveMsvcToolset();
   const { coreRoot } = getRocmSdkPaths();
-  const rocmClangVersion = resolveRocmClangVersion(coreRoot);
+  const rocmClangLine = resolveRocmClangVersionLine(coreRoot);
+  const rocmClangVersion = parseRocmClangFullVersion(rocmClangLine);
 
-  const msvcHash = fingerprintHash(toolset);
-  const rocmClangHash = fingerprintHash(rocmClangVersion);
-  console.log(`MSVC toolset: ${toolset} (fingerprint ${msvcHash})`);
-  console.log(`ROCm clang: ${rocmClangVersion} (fingerprint ${rocmClangHash})`);
+  console.log(`MSVC toolset (cache key): ${msvcVersion}`);
+  console.log(`ROCm clang: ${rocmClangLine}`);
+  console.log(`ROCm clang (cache key): ${rocmClangVersion}`);
 
-  const pipToolchainHash = PINNED_PIP_TOOLCHAIN_FINGERPRINT;
-  console.log(
-    `pip toolchain (pinned for cache key): ${PINNED_PIP_TOOLCHAIN_LABEL} (fingerprint ${pipToolchainHash})`,
-  );
+  const ninjaMinor = resolveNinjaMinorVersion();
+  const cmakeMinor = resolveCmakeMinorVersion();
+  console.log(`ninja minor (cache key): ${ninjaMinor}`);
+  console.log(`cmake minor (cache key): ${cmakeMinor}`);
 
   if (options?.workspaceRoot) {
     const lockHash = versionLockFileHash8(options.workspaceRoot);
+    const lockWheelHash = wheelLockHash8(options.workspaceRoot);
     const patchHash = buildPatchHash8(options.workspaceRoot);
-    const wheelHash = wheelLockHash8(options.workspaceRoot);
     const cacheKey = buildWorktreeCacheKey({
       lockHash8: lockHash,
+      lockWheelHash8: lockWheelHash,
       patchHash8: patchHash,
-      wheelHash8: wheelHash,
-      msvcHash,
-      rocmClangHash,
-      pipToolchainHash,
+      msvcVersion,
+      rocmClangVersion,
+      ninjaMinor,
+      cmakeMinor,
     });
     const ccacheKey = buildCcacheCacheKey({
       lockHash8: lockHash,
       patchHash8: patchHash,
-      msvcHash,
-      rocmClangHash,
-      pipToolchainHash,
+      msvcVersion,
+      rocmClangVersion,
+      ninjaMinor,
+      cmakeMinor,
     });
     console.log(`VERSION.lock.json fingerprint: ${lockHash}`);
+    console.log(`Lock wheel fingerprint: ${lockWheelHash}`);
     console.log(`Patch inputs fingerprint: ${patchHash}`);
-    console.log(`Wheel lock fingerprint: ${wheelHash}`);
     console.log(`Worktree cache key: ${cacheKey}`);
     console.log(`Ccache cache key: ${ccacheKey}`);
     if (options.exportGithubEnv) {

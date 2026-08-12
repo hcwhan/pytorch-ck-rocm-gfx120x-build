@@ -73,18 +73,20 @@ Push to `main` does **not** auto-trigger builds.
 
 **Worktree cache** (entire `C:\pt\pytorch`: patched source + hipify + `build/`):
 
-- Key: `worktree-v1-{lockHash8}-{patchHash8}-{wheelHash8}-msvc{…}-rocmClang{…}-pipToolchain{…}`
-- `lockHash8`: lock `toolchain` + `pytorch` + `compile`
-- `patchHash8`: `04.patch.ts`, `05.hipify.ts`, `gpu-archs.ts`, `add-make-kernel-pt.py`
-- `wheelHash8`: lock `wheel`
-- `pipToolchain`: pip / setuptools / wheel / ninja / packaging / psutil / **cmake**
+- Key: `worktree-v2-lock[{lockHash8}]-lockWheel[{lockWheelHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`
+- `lockHash8`: lock `toolchain` + `pytorch` + `compile` → SHA256 prefix (8 hex chars)
+- `lockWheelHash8`: lock `wheel` → SHA256 prefix (8 hex chars)
+- `patchHash8`: `04.patch.ts`, `05.hipify.ts`, `gpu-archs.ts`, `add-make-kernel-pt.py` → SHA256 prefix (8 hex chars)
+- `msvcVersion`: latest MSVC toolset dir name from vswhere (full version, e.g. `14.42.34433`)
+- `rocmClangVersion`: full version token parsed from `clang --version` (e.g. `19.0.0git`)
+- `ninja` / `cmake`: major.minor from `ninja --version` / `cmake --version`
 - **Exact match only** (no `restore-keys`)
 - **hit + verify pass**: skip prep / patch / hipify
 - **compile**: always **`setup.py build`** (upstream skips configure when `build/` is valid)
 - **save**: `use_cache=true` saves after compile (not skipped); `use_cache=false` saves only on success
 - **miss / verify fail**: prep → patch → hipify → compile → save
 
-A separate **pip toolchain cache** (`PIP_TOOLCHAIN_CACHE_KEY`) and **ccache** (`CCACHE_CACHE_KEY`, `ccache-v1-{lockHash8}-{patchHash8}-…`) layer above worktree cache.
+A separate **pip toolchain cache** (`PIP_TOOLCHAIN_CACHE_KEY`: `pt-pip-toolchain-v2-py[{python}]-rocm[{rocm}]-idx[{indexHash8}]`, `indexHash8` = lock `toolchain.rocm_index` → SHA256 prefix) and **ccache** (`CCACHE_CACHE_KEY`: `ccache-v2-lock[{lockHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`, no `lockWheel`) layer above worktree cache.
 
 ### Build stages
 

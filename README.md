@@ -73,18 +73,20 @@
 
 **Worktree cache**（整棵 `C:\pt\pytorch`：patch 后源码 + hipify + `build/`）：
 
-- Key：`worktree-v1-{lockHash8}-{patchHash8}-{wheelHash8}-msvc{…}-rocmClang{…}-pipToolchain{…}`
-- `lockHash8`：lock `toolchain` + `pytorch` + `compile`
-- `patchHash8`：`04.patch.ts`、`05.hipify.ts`、`gpu-archs.ts`、`add-make-kernel-pt.py`
-- `wheelHash8`：lock `wheel`
-- `pipToolchain`：pip / setuptools / wheel / ninja / packaging / psutil / **cmake**
+- Key：`worktree-v2-lock[{lockHash8}]-lockWheel[{lockWheelHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`
+- `lockHash8`：lock `toolchain` + `pytorch` + `compile` → SHA256 前 8 位
+- `lockWheelHash8`：lock `wheel` → SHA256 前 8 位
+- `patchHash8`：`04.patch.ts`、`05.hipify.ts`、`gpu-archs.ts`、`add-make-kernel-pt.py` → SHA256 前 8 位
+- `msvcVersion`：vswhere 最新 MSVC 工具集目录名（完整版本，如 `14.42.34433`）
+- `rocmClangVersion`：`clang --version` 解析完整版本 token（如 `19.0.0git`）
+- `ninja` / `cmake`：`ninja --version` / `cmake --version` 的 major.minor
 - **仅精确匹配**（无 `restore-keys`）
 - **hit + verify 通过**：跳过 prep / patch / hipify
 - **compile**：始终 **`setup.py build`**（有 `build/` 时上游 skip configure、增量编译）
 - **save**：`use_cache=true` 时 compile 非 skipped 即 save；`use_cache=false` 时仅成功 save
 - **miss / verify 失败**：prep → patch → hipify → compile → save
 
-另有独立 **pip toolchain cache**（`PIP_TOOLCHAIN_CACHE_KEY`）与 **ccache**（`CCACHE_CACHE_KEY`，`ccache-v1-{lockHash8}-{patchHash8}-…`）分层。
+另有独立 **pip toolchain cache**（`PIP_TOOLCHAIN_CACHE_KEY`：`pt-pip-toolchain-v2-py[{python}]-rocm[{rocm}]-idx[{indexHash8}]`，`indexHash8` = lock `toolchain.rocm_index` → SHA256 前 8 位）与 **ccache**（`CCACHE_CACHE_KEY`：`ccache-v2-lock[{lockHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`，无 `lockWheel`）分层。
 
 ### 构建阶段
 
