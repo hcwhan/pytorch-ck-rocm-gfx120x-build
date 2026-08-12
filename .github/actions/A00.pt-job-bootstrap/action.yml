@@ -1,5 +1,5 @@
 name: PT job bootstrap
-description: Node/npm、01.config、toolchain、worktree cache、条件 prep/patch/hipify（使用前需 job 级 actions/checkout）
+description: Node 26/npm、01.config、A01 toolchain、02.toolchain-fingerprint、A02/A03 cache restore、06.verify-bootstrap、条件 prep/patch/hipify、07.pin-mtimes（需 job 级 actions/checkout 与 env PT_SRC/USE_CACHE）
 
 outputs:
   worktree-cache-exists:
@@ -37,7 +37,7 @@ runs:
         rocm-version: ${{ env.ROCM_VERSION }}
         pip-cache-key: ${{ env.PIP_TOOLCHAIN_CACHE_KEY }}
 
-    - name: Fingerprint worktree cache key
+    - name: Fingerprint worktree + ccache cache keys
       shell: pwsh
       run: |
         npx tsx scripts/cli.ts 02.toolchain-fingerprint -w $env:GITHUB_WORKSPACE --export-github-env
@@ -74,7 +74,7 @@ runs:
         "cache-used=$used" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
         "WORKTREE_CACHE_USED=$used" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-    - name: Clone pytorch source
+    - name: Prepare pytorch source
       if: steps.export-worktree-used.outputs.cache-used != 'true'
       shell: pwsh
       run: |

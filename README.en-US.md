@@ -4,7 +4,7 @@
 
 GitHub Actions workflow to build **PyTorch** with **ROCm CK Tile SDPA** from source for **Windows / gfx120x (RDNA4) / Python 3.12**.
 
-Toolchain versions are pinned in **`VERSION.lock.json`** and loaded via `npx tsx scripts/cli.ts 01.config -w $env:GITHUB_WORKSPACE --export-github-env` in each workflow job.
+Toolchain versions are pinned in **`VERSION.lock.json`** and loaded via `npx tsx scripts/cli.ts 01.config -w $env:GITHUB_WORKSPACE --export-github-env` in each workflow job. Orchestration scripts are TypeScript (**Node.js 26** + `tsx`).
 
 ## Target
 
@@ -13,7 +13,7 @@ Toolchain versions are pinned in **`VERSION.lock.json`** and loaded via `npx tsx
 | GPU arch | lock **`compile.gpu_archs`** (currently `gfx1200;gfx1201`) |
 | OS | Windows |
 | Python | 3.12 |
-| PyTorch source | `VERSION.lock.json` **`pytorch.build_commit`** |
+| PyTorch source | `VERSION.lock.json` **`pytorch.build_commit`** (currently `v2.13.0`) |
 | ROCm | `7.14.0` (`rocm[devel]` pip) |
 | Runner | `windows-2022` (hosted) |
 
@@ -23,7 +23,7 @@ Toolchain versions are pinned in **`VERSION.lock.json`** and loaded via `npx tsx
 |---------|-------|------|
 | `toolchain` | `python`, `rocm_index`, `rocm` | pip toolchain pins (**no prebuilt torch install**) |
 | `pytorch` | `repo`, `build_commit`, `build_commit_date` | Exact PyTorch source cloned each build (`build_commit` may be a 40-char SHA or tag such as `v2.13.0`); **bump `build_commit` and `build_commit_date` when upgrading PyTorch** |
-| `compile` | `gpu_archs`, `ck_opt_dim` | `PYTORCH_ROCM_ARCH` (**single arch source**) and CK FMHA `opt_dim` tiers |
+| `compile` | `gpu_archs`, `ck_opt_dim`, `ck_disable_bwd` | `PYTORCH_ROCM_ARCH` (**single arch source**), CK FMHA `opt_dim` tiers; `ck_disable_bwd=true` = inference-only (env `CK_FMHA_DISABLE_BWD=1`, skips bwd codegen) |
 | `wheel` | `wheel_local_version` | Wheel `+local` tag (env `WHEEL_LOCAL_VERSION`) |
 | `wheel` | `wheel_artifact_name` | GitHub Actions artifact name |
 | `release` | `release_tag_prefix` | Release tag prefix (`{prefix}-serial-build{run_number}`) |
@@ -47,6 +47,7 @@ Prep clones **`pytorch.build_commit`** (SHA or tag; `fetch origin <ref>` + `chec
 - **`PYTORCH_ROCM_ARCH`** = lock `compile.gpu_archs` (semicolon-separated on Windows)
 - **`CK_TARGETS`** = derived from `compile.gpu_archs` (currently `gfx1200;gfx1201` → `--targets gfx12`)
 - CK FMHA **`ck_opt_dim`** = lock `compile.ck_opt_dim` (currently `32,64,128,256`)
+- **`ck_disable_bwd=true`** (inference-only wheel): skips bwd codegen / fav_v3; calling backward fails at runtime via `TORCH_CHECK`
 - Wheel local tag: `ck-rocm7.14.0-gfx120x` (see `wheel.wheel_local_version`)
 
 ## Trigger
@@ -76,7 +77,7 @@ Push to `main` does **not** auto-trigger builds.
 - Key: `worktree-v2-lock[{lockHash8}]-lockWheel[{lockWheelHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`
 - `lockHash8`: lock `toolchain` + `pytorch` + `compile` → SHA256 prefix (8 hex chars)
 - `lockWheelHash8`: lock `wheel` → SHA256 prefix (8 hex chars)
-- `patchHash8`: `04.patch.ts`, `05.hipify.ts`, `gpu-archs.ts`, `add-make-kernel-pt.py` → SHA256 prefix (8 hex chars)
+- `patchHash8`: `scripts/commands/04.patch.ts`, `scripts/commands/05.hipify.ts`, `scripts/lib/gpu-archs.ts`, `build/add-make-kernel-pt.py` → SHA256 prefix (8 hex chars)
 - `msvcVersion`: latest MSVC toolset dir name from vswhere (full version, e.g. `14.42.34433`)
 - `rocmClangVersion`: full version token parsed from `clang --version` (e.g. `19.0.0git`)
 - `ninja` / `cmake`: major.minor from `ninja --version` / `cmake --version`
@@ -90,22 +91,22 @@ A separate **pip toolchain cache** (`PIP_TOOLCHAIN_CACHE_KEY`: `pt-pip-toolchain
 
 ### Build stages
 
-Single entry point for compile and wheel packaging: `build/build-pytorch-steps.py`. CI uses `--step build` / `--step wheel`:
+Compile and wheel packaging go through CLI commands `08.build` / `09.wheel` (which invoke `build/build-pytorch-steps.py --step build|wheel`):
 
-| step | Role |
-|------|------|
-| `build` | `setup.py build` (CI compile; upstream skips configure when `build/` exists) |
-| `wheel` | `setup.py bdist_wheel` (package wheel) |
+| CLI | setuptools step | Role |
+|-----|-----------------|------|
+| `08.build` | `build` | `setup.py build` (upstream skips configure when `build/` is valid) |
+| `09.wheel` | `wheel` | `setup.py bdist_wheel`, copies the single `.whl` to `--dist-dir` |
 
-Serial workflow invocation: `--step build` → `--step wheel`.
+Serial workflow invocation: `npx tsx scripts/cli.ts 08.build` → `09.wheel`. Equivalent: `npm run pt -- 08.build` (CLI program name `pt-build`).
 
 Env is set uniformly via `scripts/lib/init-build-env.ts` (includes `SOURCE_DATE_EPOCH` from `pytorch.build_commit_date`).
 
 ## Output
 
-Artifact: **`wheel_artifact_name`** — `.whl`, `.sha256`, `wheel.manifest.json` (short-term Actions download).
+Artifact: **`wheel_artifact_name`** — `.whl`, `.sha256`, `wheel.manifest.json` (7-day retention)
 
-GitHub Release (uploaded after a successful build when `publish_release=true`; title format `{prefix} YYYY.MM.DD HH:mm:ss`, Asia/Shanghai):
+GitHub Release (uploaded after a successful build when `publish_release=true`; **prerelease**, not auto-marked latest; title format `{prefix} YYYY.MM.DD HH:mm:ss`, Asia/Shanghai):
 
 | Workflow | Tag example | Release title example |
 |----------|-------------|----------------------|
@@ -129,7 +130,7 @@ torch-*+ck.rocm7.14.0.gfx120x*-cp312-cp312-win_amd64.whl
 | CI smoke test (CPU) | `npx tsx scripts/cli.ts 10.verify --dist-dir dist --build-caches dist\build-caches.json` |
 | Pre-deploy GPU smoke test (gfx120x hardware) | `python test/gpu-smoke-test.py -w .` |
 
-Smoke test covers wheel filename/structure (including CK dim markers), pip install, and `torch.backends.cuda.is_ck_sdpa_available()`. GPU CK SDPA forward pass is in `test/gpu-smoke-test.py` (run manually on gfx120x hardware before deploy).
+Smoke test (`10.verify`, CPU): wheel filename/structure (CK fwd dim markers; bwd negative assertion when `ck_disable_bwd=1`) → SHA256 / manifest → pip install → `torch.backends.cuda.is_ck_sdpa_available()`. GPU CK SDPA forward pass is in `test/gpu-smoke-test.py` (**pip install the wheel first**; run manually on gfx120x hardware before deploy; does not replace `10.verify`).
 
 ## ComfyUI install
 
@@ -140,6 +141,7 @@ $PY = "<ComfyUI>\python_embeded\python.exe"
 
 After replacing the torch wheel under `python_embeded`:
 
+- Current wheel is **inference-only** (lock `ck_disable_bwd=true`); no CK FMHA backward
 - Keep launch arg **`--use-pytorch-cross-attention`**
 - Set env **`TORCH_ROCM_FA_PREFER_CK=1`** (or call `torch.backends.cuda.preferred_rocm_fa_library("ck")` at runtime)
 

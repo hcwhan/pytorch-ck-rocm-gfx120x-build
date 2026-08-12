@@ -99,9 +99,9 @@ export function runToolchainFingerprint(options?: {
   const rocmClangLine = resolveRocmClangVersionLine(coreRoot);
   const rocmClangVersion = parseRocmClangFullVersion(rocmClangLine);
 
-  console.log(`MSVC toolset (cache key): ${msvcVersion}`);
+  console.log(`MSVC toolset (raw): ${msvcVersion}`);
   console.log(`ROCm clang: ${rocmClangLine}`);
-  console.log(`ROCm clang (cache key): ${rocmClangVersion}`);
+  console.log(`ROCm clang (raw): ${rocmClangVersion}`);
 
   const ninjaMinor = resolveNinjaMinorVersion();
   const cmakeMinor = resolveCmakeMinorVersion();
@@ -129,7 +129,7 @@ export function runToolchainFingerprint(options?: {
       ninjaMinor,
       cmakeMinor,
     });
-    console.log(`VERSION.lock.json fingerprint: ${lockHash}`);
+    console.log(`Lock toolchain/pytorch/compile fingerprint: ${lockHash}`);
     console.log(`Lock wheel fingerprint: ${lockWheelHash}`);
     console.log(`Patch inputs fingerprint: ${patchHash}`);
     console.log(`Worktree cache key: ${cacheKey}`);

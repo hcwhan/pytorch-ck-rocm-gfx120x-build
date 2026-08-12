@@ -18,7 +18,7 @@ program.name("pt-build").description("PyTorch CK SDPA gfx120x 构建 CLI");
 
 program
   .command("01.config")
-  .description("读取 VERSION.lock.json")
+  .description("读取并校验 VERSION.lock.json；可选导出 CI env")
   .requiredOption("-w, --workspace-root <path>")
   .option("--export-github-env", "将 lock 变量追加到 GITHUB_ENV")
   .action((opts) => {
@@ -30,7 +30,9 @@ program
 
 program
   .command("02.toolchain-fingerprint")
-  .description("输出 worktree / ccache key（lock+patch+wheel+toolchain 指纹）")
+  .description(
+    "MSVC/clang + ninja/cmake 指纹；带 -w 时输出 worktree / ccache key（worktree 含 lockWheel，ccache 不含）",
+  )
   .option("-w, --workspace-root <path>", "仓库根目录（输出 cache-key）")
   .option(
     "--export-github-env",
@@ -45,7 +47,7 @@ program
 
 program
   .command("03.prep")
-  .description("按 pin 的 SHA 或 tag clone PyTorch 源码")
+  .description("blob-less 浅 clone PyTorch + 浅 submodule + strip .git")
   .requiredOption("--pt-src <path>")
   .action((opts) => {
     runPrep({ ptSrc: opts.ptSrc });
@@ -69,7 +71,7 @@ program
 
 program
   .command("06.verify-bootstrap")
-  .description("校验 restore 后的 worktree 已完成 prep+patch+hipify")
+  .description("校验 restore 后的 worktree hipify 探针路径")
   .requiredOption("--pt-src <path>")
   .action((opts) => {
     runVerifyBootstrap({ ptSrc: opts.ptSrc });
@@ -87,7 +89,9 @@ program
 
 program
   .command("08.build")
-  .description("编译 PyTorch（setup.py build；有 build/ 时上游自动跳过 cmake configure）")
+  .description(
+    "编译 PyTorch（setup.py build；有效 cmake 构建树存在时上游可能 skip configure）",
+  )
   .requiredOption("--pt-src <path>")
   .action((opts) => {
     runBuild({ ptSrc: opts.ptSrc });
@@ -95,7 +99,7 @@ program
 
 program
   .command("09.wheel")
-  .description("打包 torch wheel（setup.py bdist_wheel）")
+  .description("打包 torch wheel（setup.py bdist_wheel）并复制到 dist-dir")
   .requiredOption("--pt-src <path>")
   .requiredOption("--dist-dir <path>")
   .action((opts) => {
@@ -107,7 +111,9 @@ program
 
 program
   .command("10.verify")
-  .description("CPU wheel 冒烟测试")
+  .description(
+    "CPU wheel 校验（结构/CK 符号/SHA256/manifest）+ pip 安装冒烟 + is_ck_sdpa_available()",
+  )
   .requiredOption("--dist-dir <path>")
   .requiredOption(
     "--build-caches <path>",

@@ -4,7 +4,7 @@
 
 使用 GitHub Actions 为 **Windows / gfx120x（RDNA4）/ Python 3.12** 从源码编译带 **ROCm CK Tile SDPA** 的 **PyTorch** wheel。
 
-工具链版本以 **`VERSION.lock.json`** 为唯一来源，经 workflow 内 `npx tsx scripts/cli.ts 01.config -w $env:GITHUB_WORKSPACE --export-github-env` 注入 CI。
+工具链版本以 **`VERSION.lock.json`** 为唯一来源，经 workflow 内 `npx tsx scripts/cli.ts 01.config -w $env:GITHUB_WORKSPACE --export-github-env` 注入 CI。编排脚本为 TypeScript（**Node.js 26** + `tsx`）。
 
 ## 目标环境
 
@@ -13,7 +13,7 @@
 | GPU 架构 | lock **`compile.gpu_archs`**（当前 `gfx1200;gfx1201`） |
 | 系统 | Windows |
 | Python | 3.12 |
-| PyTorch 源码 | `VERSION.lock.json` **`pytorch.build_commit`** |
+| PyTorch 源码 | `VERSION.lock.json` **`pytorch.build_commit`**（当前 `v2.13.0`） |
 | ROCm | `7.14.0`（`rocm[devel]` pip） |
 | Runner | `windows-2022`（GitHub 托管） |
 
@@ -23,7 +23,7 @@
 |------|------|------|
 | `toolchain` | `python`、`rocm_index`、`rocm` | pip 工具链 pin（**不安装预编译 torch**） |
 | `pytorch` | `repo`、`build_commit`、`build_commit_date` | 每次构建精确 clone 的 PyTorch 源码（`build_commit` 可为 40 位 SHA 或 tag，如 `v2.13.0`）；**升级 PyTorch 时改 `build_commit` 与 `build_commit_date`** |
-| `compile` | `gpu_archs`、`ck_opt_dim` | `PYTORCH_ROCM_ARCH`（**唯一架构源**）与 CK FMHA `opt_dim` 档位 |
+| `compile` | `gpu_archs`、`ck_opt_dim`、`ck_disable_bwd` | `PYTORCH_ROCM_ARCH`（**唯一架构源**）、CK FMHA `opt_dim` 档位；`ck_disable_bwd=true` 为推理专用（env `CK_FMHA_DISABLE_BWD=1`，跳过 bwd codegen） |
 | `wheel` | `wheel_local_version` | wheel 的 `+local` 标签（env `WHEEL_LOCAL_VERSION`） |
 | `wheel` | `wheel_artifact_name` | GitHub Actions artifact 名称 |
 | `release` | `release_tag_prefix` | Release tag 前缀（`{prefix}-serial-build{run_number}`） |
@@ -47,6 +47,7 @@
 - **`PYTORCH_ROCM_ARCH`** = lock `compile.gpu_archs`（Windows 分号分隔）
 - **`CK_TARGETS`** = 由 `compile.gpu_archs` 推导（当前 `gfx1200;gfx1201` → `--targets gfx12`）
 - CK FMHA **`ck_opt_dim`** = lock `compile.ck_opt_dim`（当前 `32,64,128,256`）
+- **`ck_disable_bwd=true`**（推理专用 wheel）：跳过 bwd codegen / fav_v3；调用 backward 会在运行时 `TORCH_CHECK` 失败
 - wheel local tag：`ck-rocm7.14.0-gfx120x`（见 `wheel.wheel_local_version`）
 
 ## 触发方式
@@ -76,7 +77,7 @@
 - Key：`worktree-v2-lock[{lockHash8}]-lockWheel[{lockWheelHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`
 - `lockHash8`：lock `toolchain` + `pytorch` + `compile` → SHA256 前 8 位
 - `lockWheelHash8`：lock `wheel` → SHA256 前 8 位
-- `patchHash8`：`04.patch.ts`、`05.hipify.ts`、`gpu-archs.ts`、`add-make-kernel-pt.py` → SHA256 前 8 位
+- `patchHash8`：`scripts/commands/04.patch.ts`、`scripts/commands/05.hipify.ts`、`scripts/lib/gpu-archs.ts`、`build/add-make-kernel-pt.py` → SHA256 前 8 位
 - `msvcVersion`：vswhere 最新 MSVC 工具集目录名（完整版本，如 `14.42.34433`）
 - `rocmClangVersion`：`clang --version` 解析完整版本 token（如 `19.0.0git`）
 - `ninja` / `cmake`：`ninja --version` / `cmake --version` 的 major.minor
@@ -90,22 +91,22 @@
 
 ### 构建阶段
 
-编译/打 wheel 唯一入口：`build/build-pytorch-steps.py`。CI 固定 `--step build` / `--step wheel`：
+编译/打 wheel 经 CLI 命令 `08.build` / `09.wheel`（内部调用 `build/build-pytorch-steps.py --step build|wheel`）：
 
-| step | 作用 |
-|------|------|
-| `build` | `setup.py build`（CI compile；有 cache 时上游 skip configure） |
-| `wheel` | `setup.py bdist_wheel`（打包 wheel） |
+| CLI | setuptools step | 作用 |
+|-----|-----------------|------|
+| `08.build` | `build` | `setup.py build`（有有效 `build/` 时上游 skip configure） |
+| `09.wheel` | `wheel` | `setup.py bdist_wheel`，复制唯一 `.whl` 到 `--dist-dir` |
 
-串行 workflow 调用序列：`--step build` → `--step wheel`。
+串行 workflow 调用序列：`npx tsx scripts/cli.ts 08.build` → `09.wheel`。亦可 `npm run pt -- 08.build`（CLI 程序名 `pt-build`）。
 
 env 统一经 `scripts/lib/init-build-env.ts`（含 `SOURCE_DATE_EPOCH`，取自 `pytorch.build_commit_date`）。
 
 ## 产物
 
-Artifact：**`wheel_artifact_name`**（Actions 短期下载）
+Artifact：**`wheel_artifact_name`**（保留 7 天；含 `torch-*.whl`、`torch-*.whl.sha256`、`wheel.manifest.json`）
 
-GitHub Release（构建成功后自动上传；`publish_release=true` 时；标题格式 `{prefix} YYYY.MM.DD HH:mm:ss`，Asia/Shanghai）：
+GitHub Release（构建成功后自动上传；`publish_release=true` 时；**prerelease**、不自动设为 latest；标题格式 `{prefix} YYYY.MM.DD HH:mm:ss`，Asia/Shanghai）：
 
 | Workflow | Tag 示例 | Release 标题示例 |
 |----------|----------|------------------|
@@ -133,7 +134,7 @@ torch-*+ck.rocm7.14.0.gfx120x*-cp312-cp312-win_amd64.whl
 | CI smoke test（CPU） | `npx tsx scripts/cli.ts 10.verify --dist-dir dist --build-caches dist\build-caches.json` |
 | 部署前 GPU smoke test（gfx120x 真机） | `python test/gpu-smoke-test.py -w .` |
 
-Smoke test：wheel 文件名/结构（含 CK dim 符号）→ pip 安装 → 校验 `torch.backends.cuda.is_ck_sdpa_available()`。GPU 上跑 CK SDPA 见 `test/gpu-smoke-test.py`（部署前在真机手动跑）。
+Smoke test（`10.verify`，CPU）：wheel 文件名/结构（含 CK fwd dim 符号；`ck_disable_bwd=1` 时 bwd 负向断言）→ SHA256 / manifest → pip 安装 → 校验 `torch.backends.cuda.is_ck_sdpa_available()`。GPU 上跑 CK SDPA 见 `test/gpu-smoke-test.py`（**先 pip install wheel**，部署前在 gfx120x 真机手动跑；不替代 `10.verify`）。
 
 ## 安装到 ComfyUI
 
@@ -144,6 +145,7 @@ $PY = "<ComfyUI>\python_embeded\python.exe"
 
 替换 `python_embeded` 中的 torch 后：
 
+- 当前 wheel 为 **推理专用**（lock `ck_disable_bwd=true`）；不含 CK FMHA backward
 - 启动参数保持 **`--use-pytorch-cross-attention`**
 - 环境变量 **`TORCH_ROCM_FA_PREFER_CK=1`**（或运行时 `torch.backends.cuda.preferred_rocm_fa_library("ck")`）
 

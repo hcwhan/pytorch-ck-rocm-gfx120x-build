@@ -1,5 +1,5 @@
 name: PT ROCm toolchain
-description: PyTorch 源码构建用 Python、MSVC 与 rocm[devel]（不安装预编译 torch）
+description: PyTorch 源码构建用 Python、MSVC、rocm[devel]、ccache、pip toolchain cache、rocm-sdk-libraries/device wheels、ninja/cmake（不安装预编译 torch；需 env GPU_ARCHS；为 02.toolchain-fingerprint 提供工具链环境）
 
 inputs:
   python-version:
@@ -9,7 +9,7 @@ inputs:
     description: ROCm wheel 的 pip index URL（VERSION.lock.json toolchain.rocm_index）
     required: true
   rocm-version:
-    description: rocm[devel] 包版本（VERSION.lock.json toolchain.rocm）
+    description: ROCm pip 包版本（rocm[devel]、rocm-sdk-libraries、rocm-sdk-device-*；VERSION.lock.json toolchain.rocm）
     required: true
   pip-cache-key:
     description: Pip 工具链缓存 key（VERSION.lock.json → PIP_TOOLCHAIN_CACHE_KEY）
@@ -61,7 +61,7 @@ runs:
       run: |
         python -m pip install --upgrade pip wheel setuptools psutil packaging ninja cmake
 
-    - name: Install ROCm devel headers
+    - name: Install rocm[devel] SDK
       shell: pwsh
       run: |
         python -m pip install `

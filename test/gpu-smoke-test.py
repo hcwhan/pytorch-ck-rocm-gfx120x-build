@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""部署前 torch CK SDPA GPU 冒烟测试（gfx120x 真机；CI 不运行）。"""
+"""部署前 torch CK SDPA GPU 冒烟测试（gfx120x 真机；需已 pip install wheel；CI 不运行；不替代 10.verify）。"""
 from __future__ import annotations
 
 import argparse
@@ -35,7 +35,9 @@ def parse_gpu_archs(gpu_archs: str) -> list[str]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="torch CK SDPA wheel GPU 冒烟测试")
+    parser = argparse.ArgumentParser(
+        description="已安装 torch wheel 的 GPU CK SDPA 前向冒烟测试（需先 pip install wheel）",
+    )
     parser.add_argument(
         "-w",
         "--workspace-root",

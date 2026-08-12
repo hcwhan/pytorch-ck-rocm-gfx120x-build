@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-/** patch / hipify / codegen 脚本变更会使 worktree cache 失效。 */
+/** patch / hipify / codegen 输入变更会使 worktree cache 与 ccache 失效。 */
 const PATCH_INPUT_PATHS = [
   "scripts/commands/04.patch.ts",
   "scripts/commands/05.hipify.ts",

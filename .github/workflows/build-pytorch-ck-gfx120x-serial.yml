@@ -8,7 +8,7 @@ on:
         required: false
         default: "4"
       use_cache:
-        description: "存在匹配条目时 restore worktree（含 build/）；false 时 miss 路径仍 save"
+        description: "true 时 restore worktree（含 build/）；false 时不 restore（仍 lookup 探测 exists；used=false）；save 仅 compile 成功时；ccache 同规则"
         type: boolean
         required: false
         default: true
@@ -35,6 +35,7 @@ jobs:
   compile-and-wheel:
     name: compile-and-wheel
     runs-on: windows-2022
+    timeout-minutes: 720
 
     steps:
       - name: Checkout build repo
@@ -44,7 +45,7 @@ jobs:
         id: bootstrap
         uses: "./.github/actions/A00.pt-job-bootstrap"
 
-      - name: Compile PyTorch with worktree cache
+      - name: Compile PyTorch and save worktree + ccache
         uses: "./.github/actions/A04.pt-build-with-cache"
         with:
           pt-src: ${{ env.PT_SRC }}
@@ -54,7 +55,7 @@ jobs:
           use-cache: ${{ env.USE_CACHE }}
           run: npx tsx scripts/cli.ts 08.build --pt-src $env:PT_SRC
 
-      - name: Write compile cache metadata
+      - name: Write worktree cache metadata
         shell: pwsh
         run: |
           $entry = [ordered]@{
@@ -70,7 +71,7 @@ jobs:
         shell: pwsh
         run: npx tsx scripts/cli.ts 09.wheel --pt-src $env:PT_SRC --dist-dir $env:GITHUB_WORKSPACE\dist
 
-      - name: Verify wheel and publish
+      - name: Verify wheel, upload artifact, and publish
         uses: "./.github/actions/A99.pt-verify-publish"
         with:
           build-caches: dist/build-caches.json

@@ -1,5 +1,5 @@
 name: Save ccache
-description: 保存 GHA ccache 目录（compile 后）
+description: 保存 GHA ccache 目录（CCACHE_CACHE_KEY 精确匹配；path=%RUNNER_TEMP%/ccache）
 
 runs:
   using: composite

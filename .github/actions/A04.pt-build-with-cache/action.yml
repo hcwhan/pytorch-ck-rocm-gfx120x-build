@@ -17,11 +17,11 @@ inputs:
     required: false
     default: "false"
   use-cache:
-    description: true 时在 compile 后 save worktree（非 skipped 即 save）；false 时仅成功时 save
+    description: true 时在 build 后 save worktree + ccache（非 skipped 即 save）；false 时仅成功时 save
     required: false
     default: "true"
   run:
-    description: 编译 shell 脚本
+    description: 编译 CLI 命令（如 npx tsx scripts/cli.ts 08.build --pt-src …）
     required: true
 
 runs:

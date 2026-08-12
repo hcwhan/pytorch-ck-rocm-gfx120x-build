@@ -14,7 +14,7 @@ export function runPinMtimes(options: { ptSrc: string }): void {
   const commitDate = requireLockEnv("PYTORCH_BUILD_COMMIT_DATE");
   const epochSeconds = Number(requireLockEnv("SOURCE_DATE_EPOCH"));
   console.log(
-    `Pinning worktree mtimes under ${ptSrc} to pytorch.build_commit_date=${commitDate}`,
+    `Pinning worktree mtimes under ${ptSrc} to SOURCE_DATE_EPOCH=${epochSeconds} (${commitDate})`,
   );
 
   const startedAt = Date.now();

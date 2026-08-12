@@ -2,7 +2,7 @@
 # Node.js
 node_modules/
 
-# Dist
+# CI wheel 产物目录（.whl、.sha256、wheel.manifest.json、build-caches.json）
 dist/
 
 # Python

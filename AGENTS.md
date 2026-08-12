@@ -6,9 +6,9 @@
 
 | Workflow | 链路 |
 |----------|------|
-| **serial** | worktree restore → bootstrap verify → `setup.py build` → save worktree + ccache → `bdist_wheel` → CPU smoke test |
+| **serial** | worktree restore → bootstrap verify → `07.pin-mtimes` → `setup.py build` → save worktree + ccache → `bdist_wheel` → write `dist/build-caches.json` → CPU smoke test → optional Release |
 
-手动 `workflow_dispatch`；setuptools 同进程入口：`build/build-pytorch-steps.py`。Worktree cache：`worktree-v2-lock[{lockHash8}]-lockWheel[{lockWheelHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`（`lockHash8` = lock `toolchain`+`pytorch`+`compile`；`lockWheelHash8` = lock `wheel`；`patchHash8` = `04.patch.ts`+`05.hipify.ts`+`gpu-archs.ts`+`add-make-kernel-pt.py`；`msvc`/`rocmClang` = 完整工具链版本号；`ninja`/`cmake` = major.minor；精确 key，无 `restore-keys`）。Ccache：`ccache-v2-lock[…]-patch[…]-msvc[…]-rocmClang[…]-ninja[…]-cmake[…]`（无 `lockWheel`）。Pip：`pt-pip-toolchain-v2-py[…]-rocm[…]-idx[…]`（`01.config`）。
+手动 `workflow_dispatch`（输入：`ninja_workers`→`MAX_JOBS`、`use_cache`、`publish_release`）；setuptools 同进程入口：`build/build-pytorch-steps.py`。Worktree cache：`worktree-v2-lock[{lockHash8}]-lockWheel[{lockWheelHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`（`lockHash8` = lock `toolchain`+`pytorch`+`compile`；`lockWheelHash8` = lock `wheel`；`patchHash8` = `scripts/commands/04.patch.ts`+`scripts/commands/05.hipify.ts`+`scripts/lib/gpu-archs.ts`+`build/add-make-kernel-pt.py`；`msvc`/`rocmClang` = 完整工具链版本号；`ninja`/`cmake` = major.minor；精确 key，无 `restore-keys`）。Ccache：`ccache-v2-lock[…]-patch[…]-msvc[…]-rocmClang[…]-ninja[…]-cmake[…]`（无 `lockWheel`）。Pip：`pt-pip-toolchain-v2-py[…]-rocm[…]-idx[…]`（`01.config`）。
 
 ## 命名约定
 
@@ -37,21 +37,21 @@
 
 | 入口 | 职责 |
 |------|------|
-| `scripts/cli.ts` | 统一 CLI |
+| `scripts/cli.ts` | 统一 CLI（`npm run pt -- <cmd>` 或 `npx tsx scripts/cli.ts <cmd>`；`npm run typecheck` 本地 TS 检查） |
 | `scripts/lib/version-lock.ts` | **唯一直接读 lock 的 TS 模块**（Zod 校验） |
 | `scripts/lib/gpu-archs.ts` | 解析 lock `GPU_ARCHS`；由 `gpu_archs` 推导 `CK_TARGETS`（HIP → CK 族映射）供 patch |
 | `scripts/lib/require-env.ts` | CI env 读取；缺 env 直接 throw |
 | `scripts/lib/rocm-sdk-paths.ts` | ROCm SDK 路径（唯一路径发现） |
-| `scripts/lib/worktree-bootstrap.ts` | bootstrap 完成探针（prep+patch+hipify 路径） |
+| `scripts/lib/worktree-bootstrap.ts` | bootstrap 完成探针（hipify 关键路径，与 `05.hipify` 对齐） |
 | `scripts/lib/init-build-env.ts` | ROCm 编译 env（含 `USE_KINETO=0`；Windows 无 rocprofiler）；`installRequirements` 默认 true（仅 `08.build`） |
 | `01.config` | 读 lock；`--export-github-env` 写 CI env |
 | `02.toolchain-fingerprint` | MSVC/clang + ninja/cmake 指纹；`-w --export-github-env` 输出 `WORKTREE_CACHE_KEY` + `CCACHE_CACHE_KEY` |
-| `03.prep` | clone PyTorch + 浅 submodule（worktree cache miss 时由 bootstrap 调用） |
+| `03.prep` | blob-less 浅 clone PyTorch + 浅 submodule + author date 校验 + strip `.git`（worktree cache miss 时由 bootstrap 调用） |
 | `04.patch` | Windows CK SDPA + gfx120x 程序化补丁 + MSVC `/Brepro`（仅 shared/exe 链接器，避开 llvm-lib 静态库）；`CK_FMHA_DISABLE_BWD=1` 时省略 bwd codegen/fav_v3、GLOB 排除 `fmha_bwd` blob、**就地 patch** upstream bwd wrapper 并设 `FLASHATTENTION_DISABLE_BACKWARD`；否则完整 bwd；`CK_FMHA_GENERATE` 用 `${Python3_EXECUTABLE}`；部署 `add_make_kernel_pt.py` + `.cpp→.hip` CMake `file(RENAME)` + CK emit 独立 `RESULT_VARIABLE` |
 | `05.hipify` | `tools/amd_build/build_amd.py`（生成 `c10/hip/`、`THH/` 等 ROCm 源码） |
 | `06.verify-bootstrap` | worktree cache hit 后校验 prep+patch+hipify 产物（不含 `build/`）；失败则 fallback miss |
 | `07.pin-mtimes` | bootstrap 末尾将 PT 工作树 mtime 固定为 `pytorch.build_commit_date`（抑制 restore 后 cmake glob 重配） |
-| `08.build` | 始终 `setup.py build`（上游有 `build.ninja` 时 skip configure；`initBuildEnv` 含 ccache launcher + requirements） |
+| `08.build` | 始终 `setup.py build`（上游有有效 `build/` 时 skip configure、增量 ninja build；`initBuildEnv` 含 ccache launcher + requirements） |
 | `09.wheel` | `setup.py bdist_wheel` → 复制到 `dist/`（env 重设，不重复 pip install） |
 | `10.verify` | CPU 冒烟（wheel CK fwd dim 符号 + 禁用 bwd 负向断言 + `is_ck_sdpa_available()`）；manifest 含 `ck_disable_bwd` |
 | `11.publish` | Release 元数据 |
@@ -67,8 +67,8 @@
 
 | Action | 用途 |
 |--------|------|
-| `A00.pt-job-bootstrap` | Node/npm + `01.config` + A01 toolchain + A02/A03 cache restore + 条件 prep/patch/hipify + `07.pin-mtimes` |
-| `A01.pt-rocm-toolchain` | Python / MSVC / rocm[devel] / ccache（pip toolchain cache） |
+| `A00.pt-job-bootstrap` | Node 26/npm + `01.config` + A01 toolchain + `02.toolchain-fingerprint` + A02/A03 cache restore + `06.verify-bootstrap` + 条件 prep/patch/hipify + `07.pin-mtimes`（需 job 级 checkout；依赖 env `PT_SRC`/`USE_CACHE`） |
+| `A01.pt-rocm-toolchain` | Python / MSVC / rocm[devel] / ccache / pip toolchain cache / rocm-sdk-libraries + device wheels / `rocm_sdk init`（需 env `GPU_ARCHS`） |
 | `A02.ccache-restore` | 恢复 `%RUNNER_TEMP%/ccache`（`CCACHE_CACHE_KEY`） |
 | `A03.worktree-cache-restore` | 恢复整棵 PT 工作树（`WORKTREE_CACHE_KEY` 精确匹配） |
 | `A04.pt-build-with-cache` | 编译 + save worktree + ccache |
@@ -86,7 +86,7 @@
 - **ComfyUI 推理 wheel 默认 `compile.ck_disable_bwd=true`**（仅前向 CK FMHA；调用 backward 运行时 `TORCH_CHECK`）
 - **`/Brepro` + `SOURCE_DATE_EPOCH`**：固定 PE TimeDateStamp 与 wheel zip 时间戳（`/Brepro` 仅追加到 `CMAKE_SHARED_LINKER_FLAGS` / `CMAKE_EXE_LINKER_FLAGS`，不作用于 `llvm-lib` 静态库链接）
 - **`use_cache` 默认 true**（false 时不 restore worktree，仅 lookup；**save 仅 compile 成功时**）
-- **worktree cache save**：`use_cache=true` 时 compile 非 skipped 即 save（含失败/取消）；**`use_cache=false` 时仅成功 save**；`cache-exists` 时 save 前先 delete
+- **worktree cache save**：`use_cache=true` 时 compile 非 skipped 即 save worktree + ccache（含失败/取消）；**`use_cache=false` 时仅成功 save**；`cache-exists` 时 save 前先 delete
 - **worktree hit bootstrap**：`06.verify-bootstrap` 通过则 skip prep/patch/hipify；verify 失败 fallback miss
 - **compile**：始终 `setup.py build`（上游有有效 `build/` 时自动 skip cmake configure、增量 ninja build）
 - **ccache**：`CMAKE_*_COMPILER_LAUNCHER=ccache`；GHA cache `ccache-v2-lock[…]-patch[…]-msvc[…]-rocmClang[…]-ninja[…]-cmake[…]`（无 `lockWheel`）；save 前若 `ccache-cache-exists` 则 delete 旧条目
@@ -94,7 +94,7 @@
 
 ## 编写规范
 
-1. **单一事实来源** — lock 为准；每 job 仅 `01.config` 读 lock 一次，其余从 `GITHUB_ENV` 取。
+1. **单一事实来源** — lock 为准；配置/env 仅经 `01.config` 导出一次；hash 计算可经 `version-lock.ts` 再读 lock 文件，禁止命令内二次 `readVersionLock` 取配置。
 2. **信任流水线** — 不为漏传参 / 缺 env 加 silent fallback；`appendGithubEnv` / `appendGithubOutput` 缺文件即 throw。
 3. **最小路径** — 能力一个入口；异常快速失败，禁止命令内兜底读 lock、`??` 默认 env。
 4. **AGENTS 增改须简洁** — 并入现有条目，禁复述 README/代码。
@@ -105,8 +105,8 @@
 
 ## 维护
 
-- 升级 PyTorch：改 `pytorch.build_commit` 与 `pytorch.build_commit_date`，并核对 `04.patch.ts` 补丁前状态
-- 升级 ROCm：同步 `wheel.wheel_local_version`、`release.*`
+- 升级 PyTorch：改 `pytorch.build_commit` 与 `pytorch.build_commit_date`（须等于该 commit 的 git **author date**），并核对 `04.patch.ts` 补丁前状态
+- 升级 ROCm：同步 `wheel.wheel_local_version`、`wheel.wheel_artifact_name`、`release.*`
 - 调整 GPU 架构：只改 lock `compile.gpu_archs`（Windows 分号分隔）
 - 部署前：`python test/gpu-smoke-test.py -w .`（gfx120x 真机，需已 pip install wheel）
 

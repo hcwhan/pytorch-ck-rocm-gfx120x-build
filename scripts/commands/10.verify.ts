@@ -107,6 +107,8 @@ with zipfile.ZipFile(wheel) as zf:
                         f'(ck_disable_bwd=1)'
                     )
         print('OK CK FMHA bwd markers absent (inference-only build)')
+    else:
+        print('SKIP bwd marker check (bwd enabled)')
 
     meta_paths = [name for name in names if name.endswith('.dist-info/METADATA')]
     if not meta_paths:
@@ -253,7 +255,7 @@ export function runVerify(options: {
 
   run(PYTHON, ["-m", "pip", "install", "--force-reinstall", whlPath]);
 
-  console.log("=== torch runtime ===");
+  console.log("=== torch import checks (CPU) ===");
   run(PYTHON, [
     "-c",
     [
@@ -284,5 +286,5 @@ export function runVerify(options: {
   const manifestPath = path.join(distDir, "wheel.manifest.json");
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
   console.log(`Manifest file: ${manifestPath}`);
-  console.log("Smoke test complete");
+  console.log("CPU smoke test complete");
 }
