@@ -55,6 +55,7 @@ export function initBuildEnv(options: {
   process.env.SOURCE_DATE_EPOCH = sourceDateEpoch;
   process.env.TORCH_CUDA_ARCH_LIST = "";
   process.env.CMAKE_BUILD_TYPE = "Release";
+  process.env.CMAKE_SUPPRESS_REGENERATION = "ON";
   process.env.CMAKE_ARGS =
     "-DUSE_ROCM_CK_SDPA=ON -DUSE_ROCM_CK_GEMM=OFF -DBUILD_TEST=OFF -DUSE_KINETO=OFF";
 

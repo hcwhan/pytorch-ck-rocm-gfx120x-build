@@ -736,6 +736,7 @@ function buildMeBwdCkStubPoints(): PatchPoint[] {
  * 3. ck/CMakeLists.txt — Windows codegen 适配 + CK_TARGETS（buildCkCmakePoints）
  * 4. aten/CMakeLists.txt — #188114 arch whitelist；可选 inference-only（buildInferenceOnlyAtenPoints）
  * 5. bwd *.hip — 可选 inference-only stub（buildMha* / buildMeBwdCkStubPoints）
+ * 6. cmake/External/aotriton.cmake — 注入 CMAKE_SUPPRESS_REGENERATION=ON（local）
  */
 export function runPatch(options: { ptSrc: string }): void {
   const root = path.resolve(options.ptSrc);
@@ -775,6 +776,22 @@ export function runPatch(options: { ptSrc: string }): void {
   endforeach(flag_var)
 
   foreach(flag_var CMAKE_SHARED_LINKER_FLAGS)`,
+    },
+  ]);
+
+  // local：给 aotriton ExternalProject 的 CMAKE_CACHE_ARGS 注入
+  // CMAKE_SUPPRESS_REGENERATION=ON，让 aotriton 子构建树在缓存恢复后不生成
+  // RERUN_CMAKE/VERIFY_GLOBS 规则，跳过 mtime 漂移触发的重配与 ~4110 对象重编。
+  applyPoints(path.join(root, "cmake/External/aotriton.cmake"), [
+    {
+      name: "aotriton-suppress-regeneration",
+      before: `      CMAKE_CACHE_ARGS
+      -DAOTRITON_TARGET_ARCH:STRING=\${PYTORCH_ROCM_ARCH}
+      -DCMAKE_INSTALL_PREFIX:FILEPATH=\${__AOTRITON_INSTALL_DIR}`,
+      after: `      CMAKE_CACHE_ARGS
+      -DCMAKE_SUPPRESS_REGENERATION:BOOL=ON
+      -DAOTRITON_TARGET_ARCH:STRING=\${PYTORCH_ROCM_ARCH}
+      -DCMAKE_INSTALL_PREFIX:FILEPATH=\${__AOTRITON_INSTALL_DIR}`,
     },
   ]);
 
