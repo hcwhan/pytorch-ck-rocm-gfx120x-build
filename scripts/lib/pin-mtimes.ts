@@ -1,7 +1,10 @@
 import { readdirSync, statSync, utimesSync } from "node:fs";
 import path from "node:path";
 
-const SKIP_DIR_NAMES = new Set([".git"]);
+/** Skip VCS and the cmake build tree; pinning build/ mtimes corrupts CMake's
+ *  timestamp bookkeeping and forces Re-running CMake / mass recompile on
+ *  cache resume. build/ is re-generated, so its mtimes need not be pinned. */
+const SKIP_DIR_NAMES = new Set([".git", "build"]);
 
 function collectPaths(root: string): { files: string[]; directories: string[] } {
   const files: string[] = [];
