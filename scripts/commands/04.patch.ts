@@ -779,16 +779,66 @@ export function runPatch(options: { ptSrc: string }): void {
     },
   ]);
 
-  // local：给 aotriton ExternalProject 的 CMAKE_CACHE_ARGS 注入
-  // CMAKE_SUPPRESS_REGENERATION=ON，让 aotriton 子构建树在缓存恢复后不生成
-  // RERUN_CMAKE/VERIFY_GLOBS 规则，跳过 mtime 漂移触发的重配与 ~4110 对象重编。
+  // local：三处 ExternalProject（dlfcn-win32 / xz / aotriton_runtime）在缓存
+  // 恢复后续编时不重新 configure，从而保住各子树的 .ninja_log，跳过 ~4110
+  // aotriton autotune 对象重编。
+  //
+  // 根因：cmake --build 每次会 re-run CMake；ExternalProject 的 update step
+  // 默认「只要 CMake re-run 就重跑」，重跑后 touch update stamp -> configure
+  // stamp 变旧 -> configure 重跑 -> 重写 build.ninja -> .ninja_log 作废 ->
+  // 全部重编。UPDATE_DISCONNECTED 跳过 update（Git 源 + 固定 GIT_TAG，本就
+  // 无需 update），configure 随即因源码 mtime(已 pin 为 epoch) 不新于 stamp
+  // 而跳过。同时向三个子树注入 CMAKE_SUPPRESS_REGENERATION，双保险压掉
+  // build 阶段内的 RERUN_CMAKE/VERIFY_GLOBS。
   applyPoints(path.join(root, "cmake/External/aotriton.cmake"), [
+    // dlfcn-win32：CMAKE_ARGS（仅首次 configure 生效）+ UPDATE_DISCONNECTED
     {
-      name: "aotriton-suppress-regeneration",
+      name: "aotriton-dlfcn-update-disconnected",
+      before: `    ExternalProject_Add(\${dlfcn-win32_external}
+      GIT_REPOSITORY https://github.com/dlfcn-win32/dlfcn-win32.git
+      GIT_TAG v1.4.2
+      PREFIX \${__DLFCN_WIN32_PREFIX}
+      INSTALL_DIR \${__DLFCN_WIN32_INSTALL_DIR}
+      CMAKE_ARGS
+        -DCMAKE_INSTALL_PREFIX=\${__DLFCN_WIN32_INSTALL_DIR}`,
+      after: `    ExternalProject_Add(\${dlfcn-win32_external}
+      GIT_REPOSITORY https://github.com/dlfcn-win32/dlfcn-win32.git
+      GIT_TAG v1.4.2
+      PREFIX \${__DLFCN_WIN32_PREFIX}
+      INSTALL_DIR \${__DLFCN_WIN32_INSTALL_DIR}
+      UPDATE_DISCONNECTED TRUE
+      CMAKE_ARGS
+        -DCMAKE_SUPPRESS_REGENERATION:BOOL=ON
+        -DCMAKE_INSTALL_PREFIX=\${__DLFCN_WIN32_INSTALL_DIR}`,
+    },
+    // xz/liblzma：同上
+    {
+      name: "aotriton-xz-update-disconnected",
+      before: `    ExternalProject_Add(\${xz_external}
+      GIT_REPOSITORY https://github.com/tukaani-project/xz.git
+      GIT_TAG v5.8.1
+      PREFIX \${__XZ_PREFIX}
+      INSTALL_DIR \${__XZ_INSTALL_DIR}
+      CMAKE_ARGS
+        -DCMAKE_INSTALL_PREFIX=\${__XZ_INSTALL_DIR}`,
+      after: `    ExternalProject_Add(\${xz_external}
+      GIT_REPOSITORY https://github.com/tukaani-project/xz.git
+      GIT_TAG v5.8.1
+      PREFIX \${__XZ_PREFIX}
+      INSTALL_DIR \${__XZ_INSTALL_DIR}
+      UPDATE_DISCONNECTED TRUE
+      CMAKE_ARGS
+        -DCMAKE_SUPPRESS_REGENERATION:BOOL=ON
+        -DCMAKE_INSTALL_PREFIX=\${__XZ_INSTALL_DIR}`,
+    },
+    // aotriton_runtime：CMAKE_CACHE_ARGS + UPDATE_DISCONNECTED
+    {
+      name: "aotriton-runtime-update-disconnected",
       before: `      CMAKE_CACHE_ARGS
       -DAOTRITON_TARGET_ARCH:STRING=\${PYTORCH_ROCM_ARCH}
       -DCMAKE_INSTALL_PREFIX:FILEPATH=\${__AOTRITON_INSTALL_DIR}`,
-      after: `      CMAKE_CACHE_ARGS
+      after: `      UPDATE_DISCONNECTED TRUE
+      CMAKE_CACHE_ARGS
       -DCMAKE_SUPPRESS_REGENERATION:BOOL=ON
       -DAOTRITON_TARGET_ARCH:STRING=\${PYTORCH_ROCM_ARCH}
       -DCMAKE_INSTALL_PREFIX:FILEPATH=\${__AOTRITON_INSTALL_DIR}`,
