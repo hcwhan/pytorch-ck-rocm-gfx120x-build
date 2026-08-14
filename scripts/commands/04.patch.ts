@@ -414,16 +414,12 @@ const BWD_DISABLED_MSG =
  * inference-only 时对 `mha_bwd_ck.hip` 的就地 stub patch。
  *
  * local：用 `#if 0` 包裹 bwd helper/函数体，入口保留 TORCH_CHECK。
+ * helper `#endif` 前关闭 namespace 并在 stub 函数前重新打开，避免 v2.13.0 出现 extraneous `}`。
  * 兼容 v2.13.0（已有 FLASHATTENTION_DISABLE_BACKWARD guard）与更早 upstream 布局。
  * 上游 bwd 实现来自 #143695。
  */
 function buildMhaBwdCkStubPoints(): PatchPoint[] {
   const omitFunctionBodyBefore = [
-    `#endif
-    if (is_causal) { window_size_right = 0; }
-
-    bool is_dropout = p_dropout > 0.0;
-    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
     `#ifdef FLASHATTENTION_DISABLE_BACKWARD
     TORCH_CHECK(false, "This flash attention build does not support backward.");
 #endif
@@ -431,14 +427,32 @@ function buildMhaBwdCkStubPoints(): PatchPoint[] {
 
     bool is_dropout = p_dropout > 0.0;
     auto stream = at::cuda::getCurrentCUDAStream().stream();`,
+    `#endif
+    if (is_causal) { window_size_right = 0; }
+
+    bool is_dropout = p_dropout > 0.0;
+    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
   ];
-  const omitFunctionBodyAfter = `#endif
+  const omitFunctionBodyAfter = [
+    `    TORCH_CHECK(false, "${BWD_DISABLED_MSG}");
+#if 0 // upstream CK FMHA bwd body omitted (CK_FMHA_DISABLE_BWD=1)
+    if (is_causal) { window_size_right = 0; }
+
+    bool is_dropout = p_dropout > 0.0;
+    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
+    `#endif
     TORCH_CHECK(false, "${BWD_DISABLED_MSG}");
 #if 0 // upstream CK FMHA bwd body omitted (CK_FMHA_DISABLE_BWD=1)
     if (is_causal) { window_size_right = 0; }
 
     bool is_dropout = p_dropout > 0.0;
-    auto stream = at::cuda::getCurrentCUDAStream().stream();`;
+    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
+  ];
+  const reopenNamespaceBeforeMhaBwdCk = `
+namespace pytorch_flash {
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
+mha_bwd_ck(const at::Tensor &dout,                   // batch_size x seqlen_q x num_heads, x head_size_og`;
 
   return [
     // local：inference-only 用 #if 0 包裹 bwd helper（上游 #143695 mha_bwd_ck.hip）
@@ -504,17 +518,13 @@ mha_bwd_ck(const at::Tensor &dout,                   // batch_size x seqlen_q x 
         `    args.drop_seed_offset       = drop_seed_offset;
     return args;
 }
-#endif
-
-std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
-mha_bwd_ck(const at::Tensor &dout,                   // batch_size x seqlen_q x num_heads, x head_size_og`,
+} // namespace pytorch_flash
+#endif${reopenNamespaceBeforeMhaBwdCk}`,
         `        drop_seed_offset
     };
 }
-#endif
-
-std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
-mha_bwd_ck(const at::Tensor &dout,                   // batch_size x seqlen_q x num_heads, x head_size_og`,
+} // namespace pytorch_flash
+#endif${reopenNamespaceBeforeMhaBwdCk}`,
       ],
     },
     // local：inference-only stub mha_bwd_ck 函数体（v2.13.0 已有 FLASHATTENTION_DISABLE_BACKWARD guard）
@@ -544,11 +554,6 @@ mha_bwd_ck(const at::Tensor &dout,                   // batch_size x seqlen_q x 
  */
 function buildMhaVarlenBwdCkStubPoints(): PatchPoint[] {
   const omitFunctionBodyBefore = [
-    `#endif
-    if (is_causal) { window_size_right = 0; }
-
-    bool is_dropout = p_dropout > 0.0;
-    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
     `#ifdef FLASHATTENTION_DISABLE_BACKWARD
     TORCH_CHECK(false, "This flash attention build does not support backward.");
 #endif
@@ -556,14 +561,32 @@ function buildMhaVarlenBwdCkStubPoints(): PatchPoint[] {
 
     bool is_dropout = p_dropout > 0.0;
     auto stream = at::cuda::getCurrentCUDAStream().stream();`,
+    `#endif
+    if (is_causal) { window_size_right = 0; }
+
+    bool is_dropout = p_dropout > 0.0;
+    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
   ];
-  const omitFunctionBodyAfter = `#endif
+  const omitFunctionBodyAfter = [
+    `    TORCH_CHECK(false, "${BWD_DISABLED_MSG}");
+#if 0 // upstream CK FMHA bwd body omitted (CK_FMHA_DISABLE_BWD=1)
+    if (is_causal) { window_size_right = 0; }
+
+    bool is_dropout = p_dropout > 0.0;
+    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
+    `#endif
     TORCH_CHECK(false, "${BWD_DISABLED_MSG}");
 #if 0 // upstream CK FMHA bwd body omitted (CK_FMHA_DISABLE_BWD=1)
     if (is_causal) { window_size_right = 0; }
 
     bool is_dropout = p_dropout > 0.0;
-    auto stream = at::cuda::getCurrentCUDAStream().stream();`;
+    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
+  ];
+  const reopenNamespaceBeforeMhaVarlenBwdCk = `
+namespace pytorch_flash {
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
+mha_varlen_bwd_ck(const at::Tensor &dout,                   // total_q x num_heads x head_size`;
 
   return [
     // local：inference-only 用 #if 0 包裹 varlen bwd helper（上游 #143695 mha_varlen_bwd_ck.hip）
@@ -628,16 +651,12 @@ mha_varlen_bwd_ck(const at::Tensor &dout,                   // total_q x num_hea
         `    args.drop_seed_offset        = drop_seed_offset;
     return args;
 }
-#endif
-
-std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
-mha_varlen_bwd_ck(const at::Tensor &dout,                   // total_q x num_heads x head_size`,
+} // namespace pytorch_flash
+#endif${reopenNamespaceBeforeMhaVarlenBwdCk}`,
         `                         drop_seed_offset};
 }
-#endif
-
-std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
-mha_varlen_bwd_ck(const at::Tensor &dout,                   // total_q x num_heads x head_size`,
+} // namespace pytorch_flash
+#endif${reopenNamespaceBeforeMhaVarlenBwdCk}`,
       ],
     },
     // local：inference-only stub mha_varlen_bwd_ck 函数体
