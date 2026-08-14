@@ -25,9 +25,10 @@ export function runPinMtimes(options: { ptSrc: string }): void {
   // Pinning them to SOURCE_DATE_EPOCH makes .obj (from cache, ~build time)
   // newer than all inputs, satisfying ninja's dirty check 1.
   const { coreRoot, develRoot } = getRocmSdkPaths();
-  const clangInclude = path.join(coreRoot, "lib", "llvm", "lib", "clang");
+  const clangIncludeCore = path.join(coreRoot, "lib", "llvm", "lib", "clang");
+  const clangIncludeDevel = path.join(develRoot, "lib", "llvm", "lib", "clang");
   const rocmInclude = path.join(develRoot, "include");
-  const externalDirs = [clangInclude, rocmInclude];
+  const externalDirs = [clangIncludeCore, clangIncludeDevel, rocmInclude];
 
   console.log(`Pinning external headers: ${externalDirs.join(", ")}`);
 
