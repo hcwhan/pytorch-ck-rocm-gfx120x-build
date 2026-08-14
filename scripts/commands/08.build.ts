@@ -1,6 +1,6 @@
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
-import { run } from "../lib/exec.js";
+import { run, runCapture } from "../lib/exec.js";
 import { initBuildEnv } from "../lib/init-build-env.js";
 import { requireMaxJobs } from "../lib/max-jobs.js";
 import { resolveBuildDir } from "../lib/paths.js";
@@ -31,6 +31,26 @@ export function runBuild(options: { ptSrc: string }): void {
     console.log("Stamping prebuilt objects before ninja resume...");
     run(PYTHON, [stampScript, "--pt-src", ptSrc]);
 
+    // Diagnostic: dry-run explain to see why edges are dirty (or clean).
+    // Non-fatal: if ninja explain fails, we still proceed to the real build.
+    try {
+      const explain = runCapture("ninja", [
+        "-d", "explain", "-n", "-C", buildDir, "install",
+      ]);
+      const lines = explain.split("\n");
+      console.log(
+        `=== ninja -d explain -n (${lines.length} lines, showing first 50) ===`,
+      );
+      for (const line of lines.slice(0, 50)) {
+        console.log(line);
+      }
+      if (lines.length > 50) {
+        console.log(`... (${lines.length - 50} more lines)`);
+      }
+      console.log("=== end explain ===");
+    } catch (e) {
+      console.log(`ninja -d explain -n failed (non-fatal): ${e}`);
+    }
     console.log(
       `Worktree cache hit: ninja -C ${buildDir} install (-j ${maxJobs})`,
     );
