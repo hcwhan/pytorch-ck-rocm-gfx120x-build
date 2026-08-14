@@ -23,9 +23,14 @@ export function runBuild(options: { ptSrc: string }): void {
   const maxJobs = requireMaxJobs();
 
   if (cacheHit && existsSync(buildNinja)) {
-    // Worktree 命中且 build.ninja 存在 → 跳过 CMake 直接 ninja -C，
-    // 避免 cmake --build 触发 CMake 检查导致 .ninja_log 作废。这样 ninja
-    // 靠 mtime + .ninja_log 跳过已编译对象，实现真正的续编而非重编。
+    // Worktree 命中且 build.ninja 存在 → 先 stamp 预构建对象再 ninja -C。
+    // stamp 将 .obj mtime 与 .ninja_log entry mtime 统一设为未来值，
+    // 使 ninja 的两条 dirty 检查（obj.mtime >= input, log.mtime >= input）
+    // 同时通过，实现真正的续编而非重编。
+    const stampScript = path.join(resolveBuildDir(), "stamp-prebuilt.py");
+    console.log("Stamping prebuilt objects before ninja resume...");
+    run(PYTHON, [stampScript, "--pt-src", ptSrc]);
+
     console.log(
       `Worktree cache hit: ninja -C ${buildDir} install (-j ${maxJobs})`,
     );
