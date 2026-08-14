@@ -32,19 +32,27 @@ runs:
       shell: pwsh
       run: ${{ inputs.run }}
 
-    - name: Delete stale worktree cache entry
-      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && inputs.cache-key != '' && inputs.cache-exists == 'true'
+    - name: Delete all stale worktree caches
+      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && inputs.cache-key != ''
       shell: pwsh
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        $key = [uri]::EscapeDataString('${{ inputs.cache-key }}')
         $ref = [uri]::EscapeDataString('${{ github.ref }}')
-        gh api --method DELETE "/repos/${{ github.repository }}/actions/caches?key=$key&ref=$ref"
+        $caches = gh api "/repos/${{ github.repository }}/actions/caches?ref=$ref" --paginate --jq '.actions_caches[] | {id, key}' | ConvertFrom-Json
         if ($LASTEXITCODE -ne 0) {
-          Write-Error "Failed to delete stale worktree cache entry (key=$key, ref=$ref, exit=$LASTEXITCODE)"
-          exit $LASTEXITCODE
+          Write-Warning "Failed to list worktree caches (ref=$ref, exit=$LASTEXITCODE); skipping delete"
+          return
         }
+        $deleted = 0
+        foreach ($c in $caches) {
+          if ($c.key -like "$env:WORKTREE_CACHE_PREFIX-*") {
+            Write-Host "Deleting worktree cache: $($c.key)"
+            gh api --method DELETE "/repos/${{ github.repository }}/actions/caches/$($c.id)" 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) { $deleted++ }
+          }
+        }
+        Write-Host "Deleted $deleted stale worktree cache entries"
 
     - name: Save worktree cache
       id: save-worktree-cache
@@ -54,19 +62,27 @@ runs:
         pt-src: ${{ inputs.pt-src }}
         cache-key: ${{ inputs.cache-key }}
 
-    - name: Delete stale ccache entry
-      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && env.CCACHE_CACHE_KEY != '' && inputs.ccache-cache-exists == 'true'
+    - name: Delete all stale ccache entries
+      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && env.CCACHE_CACHE_KEY != ''
       shell: pwsh
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        $key = [uri]::EscapeDataString($env:CCACHE_CACHE_KEY)
         $ref = [uri]::EscapeDataString('${{ github.ref }}')
-        gh api --method DELETE "/repos/${{ github.repository }}/actions/caches?key=$key&ref=$ref"
+        $caches = gh api "/repos/${{ github.repository }}/actions/caches?ref=$ref" --paginate --jq '.actions_caches[] | {id, key}' | ConvertFrom-Json
         if ($LASTEXITCODE -ne 0) {
-          Write-Error "Failed to delete stale ccache entry (key=$key, ref=$ref, exit=$LASTEXITCODE)"
-          exit $LASTEXITCODE
+          Write-Warning "Failed to list ccache entries (ref=$ref, exit=$LASTEXITCODE); skipping delete"
+          return
         }
+        $deleted = 0
+        foreach ($c in $caches) {
+          if ($c.key -like "$env:CCACHE_CACHE_PREFIX-*") {
+            Write-Host "Deleting ccache entry: $($c.key)"
+            gh api --method DELETE "/repos/${{ github.repository }}/actions/caches/$($c.id)" 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) { $deleted++ }
+          }
+        }
+        Write-Host "Deleted $deleted stale ccache entries"
 
     - name: Save ccache
       if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && env.CCACHE_CACHE_KEY != ''
