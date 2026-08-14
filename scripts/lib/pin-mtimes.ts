@@ -47,6 +47,7 @@ function directoryDepth(dirPath: string, root: string): number {
 export function pinMtimes(options: {
   ptSrc: string;
   epochSeconds: number;
+  externalDirs?: string[];
 }): { files: number; directories: number } {
   const root = path.resolve(options.ptSrc);
   statSync(root);
@@ -58,8 +59,39 @@ export function pinMtimes(options: {
   }
 
   const mtime = new Date(options.epochSeconds * 1000);
-  const { files, directories } = collectPaths(root);
+  let totalFiles = 0;
+  let totalDirs = 0;
 
+  // Pin PyTorch source tree
+  const { files, directories } = collectPaths(root);
+  totalFiles += files.length;
+  totalDirs += directories.length;
+
+  // Pin external directories (ROCm SDK headers, etc.)
+  for (const extDir of options.externalDirs ?? []) {
+    try {
+      statSync(extDir);
+    } catch {
+      console.log(`External dir not found, skipping: ${extDir}`);
+      continue;
+    }
+    const extResult = collectPaths(path.resolve(extDir));
+    totalFiles += extResult.files.length;
+    totalDirs += extResult.directories.length;
+    for (const filePath of extResult.files) {
+      utimesSync(filePath, mtime, mtime);
+    }
+    const sortedExtDirs = [...extResult.directories].sort(
+      (left, right) =>
+        directoryDepth(right, path.resolve(extDir)) -
+        directoryDepth(left, path.resolve(extDir)),
+    );
+    for (const dirPath of sortedExtDirs) {
+      utimesSync(dirPath, mtime, mtime);
+    }
+  }
+
+  // Pin PyTorch source files
   for (const filePath of files) {
     utimesSync(filePath, mtime, mtime);
   }
@@ -72,5 +104,5 @@ export function pinMtimes(options: {
     utimesSync(dirPath, mtime, mtime);
   }
 
-  return { files: files.length, directories: directories.length };
+  return { files: totalFiles, directories: totalDirs };
 }
