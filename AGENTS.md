@@ -6,7 +6,7 @@
 
 | Workflow | 链路 |
 |----------|------|
-| **serial** | worktree restore → bootstrap verify → `07.pin-mtimes` → `setup.py build` → save worktree + ccache → `bdist_wheel` → write `dist/build-caches.json` → CPU smoke test → optional Release |
+| **serial** | worktree restore → bootstrap verify → `07.pin-mtimes`（含 ROCm 外部头文件） → cache-hit: `ninja -C` / cache-miss: `setup.py build` → save worktree + ccache → `bdist_wheel` → write `dist/build-caches.json` → CPU smoke test → optional Release |
 
 手动 `workflow_dispatch`（输入：`ninja_workers`→`MAX_JOBS`、`use_cache`、`publish_release`）；setuptools 同进程入口：`build/build-pytorch-steps.py`。Worktree cache：`worktree-v2-lock[{lockHash8}]-lockWheel[{lockWheelHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`（`lockHash8` = lock `toolchain`+`pytorch`+`compile`；`lockWheelHash8` = lock `wheel`；`patchHash8` = `scripts/commands/04.patch.ts`+`scripts/commands/05.hipify.ts`+`scripts/lib/gpu-archs.ts`+`build/add-make-kernel-pt.py`；`msvc`/`rocmClang` = 完整工具链版本号；`ninja`/`cmake` = major.minor；精确 key，无 `restore-keys`）。Ccache：`ccache-v2-lock[…]-patch[…]-msvc[…]-rocmClang[…]-ninja[…]-cmake[…]`（无 `lockWheel`）。Pip：`pt-pip-toolchain-v2-py[…]-rocm[…]-idx[…]`（`01.config`）。
 
@@ -50,8 +50,8 @@
 | `04.patch` | Windows CK SDPA + gfx120x 程序化补丁 + MSVC `/Brepro`（仅 shared/exe 链接器，避开 llvm-lib 静态库）；`CK_FMHA_DISABLE_BWD=1` 时省略 bwd codegen/fav_v3、GLOB 排除 `fmha_bwd` blob、**就地 patch** upstream bwd wrapper 并设 `FLASHATTENTION_DISABLE_BACKWARD`；否则完整 bwd；`CK_FMHA_GENERATE` 用 `${Python3_EXECUTABLE}`；部署 `add_make_kernel_pt.py` + `.cpp→.hip` CMake `file(RENAME)` + CK emit 独立 `RESULT_VARIABLE` |
 | `05.hipify` | `tools/amd_build/build_amd.py`（生成 `c10/hip/`、`THH/` 等 ROCm 源码） |
 | `06.verify-bootstrap` | worktree cache hit 后校验 prep+patch+hipify 产物（不含 `build/`）；失败则 fallback miss |
-| `07.pin-mtimes` | bootstrap 末尾将 PT 工作树 mtime 固定为 `pytorch.build_commit_date`（抑制 restore 后 cmake glob 重配） |
-| `08.build` | 始终 `setup.py build`（上游有有效 `build/` 时 skip configure、增量 ninja build；`initBuildEnv` 含 ccache launcher + requirements） |
+| `07.pin-mtimes` | bootstrap 末尾将 PT 工作树 + ROCm SDK 外部头文件 mtime 固定为 `SOURCE_DATE_EPOCH`（满足 ninja 3 条 dirty 检查；见下方"缓存复用"节） |
+| `08.build` | cache-hit 时 `ninja -C`（跳过 CMake reconfigure，保 `.ninja_log`）；cache-miss 时 `setup.py build`（cmake configure + 全量编译）；`initBuildEnv` 含 ccache launcher + requirements |
 | `09.wheel` | `setup.py bdist_wheel` → 复制到 `dist/`（env 重设，不重复 pip install） |
 | `10.verify` | CPU 冒烟（wheel CK fwd dim 符号 + 禁用 bwd 负向断言 + `is_ck_sdpa_available()`）；manifest 含 `ck_disable_bwd` |
 | `11.publish` | Release 元数据 |
@@ -86,11 +86,37 @@
 - **ComfyUI 推理 wheel 默认 `compile.ck_disable_bwd=true`**（仅前向 CK FMHA；调用 backward 运行时 `TORCH_CHECK`）
 - **`/Brepro` + `SOURCE_DATE_EPOCH`**：固定 PE TimeDateStamp 与 wheel zip 时间戳（`/Brepro` 仅追加到 `CMAKE_SHARED_LINKER_FLAGS` / `CMAKE_EXE_LINKER_FLAGS`，不作用于 `llvm-lib` 静态库链接）
 - **`use_cache` 默认 true**（false 时不 restore worktree，仅 lookup；**save 仅 compile 成功时**）
-- **worktree cache save**：`use_cache=true` 时 compile 非 skipped 即 save worktree + ccache（含失败/取消）；**`use_cache=false` 时仅成功 save**；`cache-exists` 时 save 前先 delete
+- **worktree cache save**：`use_cache=true` 时 compile 非 skipped 即 save（含失败/取消）；save 前删除所有同类（`worktree-v2-*`）缓存条目
+- **ccache save**：同上规则；save 前删除所有同类（`ccache-v2-*`）缓存条目；`CCACHE_MAXSIZE=3G`
 - **worktree hit bootstrap**：`06.verify-bootstrap` 通过则 skip prep/patch/hipify；verify 失败 fallback miss
-- **compile**：始终 `setup.py build`（上游有有效 `build/` 时自动 skip cmake configure、增量 ninja build）
-- **ccache**：`CMAKE_*_COMPILER_LAUNCHER=ccache`；GHA cache `ccache-v2-lock[…]-patch[…]-msvc[…]-rocmClang[…]-ninja[…]-cmake[…]`（无 `lockWheel`）；save 前若 `ccache-cache-exists` 则 delete 旧条目
-- smoke test 在 CPU runner 上验证 wheel CK dim 符号 + `is_ck_sdpa_available()`（不跑 GPU kernel）
+- **compile**：cache-hit 时 `ninja -C build install`（跳过 CMake reconfigure，保 `.ninja_log`）；cache-miss 时 `setup.py build`
+- **ccache**：`CMAKE_*_COMPILER_LAUNCHER=ccache`；GHA cache `ccache-v2-lock[…]-patch[…]-msvc[…]-rocmClang[…]-ninja[…]-cmake[…]`（无 `lockWheel`）
+
+## 缓存复用
+
+worktree cache 恢复后，ninja 必须同时通过 **3 条 dirty 检查**才跳过已编译对象。任一失败 → mass recompile。
+
+| 检查 | ninja 源码 | 条件 | 失败时的 explain 原因 | 本项目如何满足 |
+|------|-----------|------|---------------------|---------------|
+| 1 | `graph.cc:324` | `obj.mtime >= 最新 input mtime` | "output older than most recent input" | `07.pin-mtimes` 将 ROCm SDK 外部头文件钉到 `SOURCE_DATE_EPOCH`（2026-07-03），使缓存 `.obj`（~构建时刻）比所有 input 新 |
+| 2 | `graph.cc:338` | `.ninja_log entry.mtime >= 最新 input mtime` | "recorded mtime older than most recent input" | `.ninja_log` 是文本文件，tar 原样保留内容；entry mtime = 编译时刻 > pinned headers |
+| 3 | `graph.cc:737` | `obj.mtime <= .ninja_deps 记录的 mtime` | "stored deps info out of date" | `pin-mtimes` 跳过 `build/`（`SKIP_DIR_NAMES = {".git", "build"}`），不 touch `.obj`；tar `--posix` floor 截断 `.obj` mtime 到秒 ≤ 原始纳秒值 |
+
+**关键：为什么必须用 `ninja -C` 而非 `cmake --build`**
+
+`cmake --build` 会检查 CMake reconfigure（依赖 `build/` 内部状态文件 mtime）。`pin-mtimes` 跳过 `build/`，这些文件 mtime 被 tar 扰动，可能触发 reconfigure → 重新生成 `build.ninja` → command hash 全部变化 → mass recompile。`ninja -C` 完全绕过 CMake，直接按现有 `build.ninja` 编译。cache key 的 `patch[hash]` 段保证 patch 变了走 cache-miss 重新 configure。
+
+**pin 的外部目录**（经 `getRocmSdkPaths()` 获取路径）：
+
+| 目录 | pip 包来源 | 包含的关键头文件 |
+|------|----------|-----------------|
+| `coreRoot/lib/llvm/lib/clang` | `_rocm_sdk_core` | `yvals_core.h`, `vadefs.h` |
+| `develRoot/lib/llvm/lib/clang` | `_rocm_sdk_devel` | `cuda_wrappers/new` |
+| `develRoot/include` | `_rocm_sdk_devel` | `hip_runtime.h` 等 |
+
+**cache key 前缀统一定义**：`WORKTREE_CACHE_PREFIX`（`worktree-v2`）和 `CCACHE_CACHE_PREFIX`（`ccache-v2`）在 `worktree-cache-key.ts` / `ccache-cache-key.ts` 导出，经 `02.toolchain-fingerprint` 写入 `GITHUB_ENV`，A04 delete step 用 `$env:*_CACHE_PREFIX-*` 做通配匹配。
+
+**cache save 前的清理**：A04 在 save 前删除所有同类前缀缓存（不只删同名 key），确保旧 patch 的缓存不积累，总量不超过 10GB 限制（1 worktree ~2.45GB + 1 ccache ~2GB + 1 pip ~2.25GB ≈ 6.7GB）。
 
 ## 编写规范
 
