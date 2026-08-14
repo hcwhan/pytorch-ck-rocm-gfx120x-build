@@ -19,7 +19,7 @@ function applyCcacheEnv(ptSrc: string): void {
   process.env.CCACHE_BASEDIR = ptSrc;
   process.env.CCACHE_SLOPPINESS ??=
     "time_macros,include_file_mtime,pch_defines,random_seed";
-  process.env.CCACHE_MAXSIZE ??= "2G";
+  process.env.CCACHE_MAXSIZE ??= "3G";
 
   console.log(`CCACHE_DIR=${ccacheDir}`);
   console.log(`CCACHE_BASEDIR=${process.env.CCACHE_BASEDIR}`);
