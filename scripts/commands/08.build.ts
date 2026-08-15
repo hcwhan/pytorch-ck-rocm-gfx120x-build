@@ -9,7 +9,7 @@ import { resolveBuildDir } from "../lib/paths.js";
 const PYTHON = "python";
 
 // const WATCHDOG_LIMIT_MS = 5 * 60 * 60 * 1000;
-const WATCHDOG_LIMIT_MS = 20 * 60 * 1000;
+const WATCHDOG_LIMIT_MS = 40 * 60 * 1000;
 const POLL_INTERVAL_MS = 30_000;
 const ABORT_RETRY_INTERVAL_MS = 60_000;
 const MAX_ABORT_ATTEMPTS = 10;
