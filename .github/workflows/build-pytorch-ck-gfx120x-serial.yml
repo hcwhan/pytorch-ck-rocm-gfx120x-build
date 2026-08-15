@@ -33,7 +33,7 @@ permissions:
   contents: write
 
 env:
-  MAX_JOBS: ${{ github.event.inputs.ninja_workers }}
+  MAX_JOBS: ${{ github.event.inputs.ninja_workers || '4' }}
   PT_SRC: C:\pt\pytorch
   USE_CACHE: ${{ github.event.inputs.use_cache != 'false' && 'true' || 'false' }}
   PUBLISH_RELEASE: ${{ github.event.inputs.publish_release != 'false' && 'true' || 'false' }}
