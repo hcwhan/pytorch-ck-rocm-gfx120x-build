@@ -22,10 +22,11 @@ function requireEnv(name: string): string {
 function dispatchRetryWorkflow(nextRetryCount: number): boolean {
   const repo = requireGithubActionsEnv("GITHUB_REPOSITORY");
   const ref = requireGithubActionsEnv("GITHUB_REF_NAME");
-  const maxJobs = requireEnv("MAX_JOBS");
-  const useCache = requireEnv("USE_CACHE");
-  const publishRelease = requireEnv("PUBLISH_RELEASE");
+  const maxJobs = requireEnv("MAX_JOBS").trim();
+  const useCache = requireEnv("USE_CACHE") === "true";
+  const publishRelease = requireEnv("PUBLISH_RELEASE") === "true";
 
+  // gh -F coerces numeric-looking values to numbers; string workflow inputs need -f.
   const result = spawnSync(
     "gh",
     [
@@ -33,13 +34,13 @@ function dispatchRetryWorkflow(nextRetryCount: number): boolean {
       `/repos/${repo}/actions/workflows/${WORKFLOW_FILE}/dispatches`,
       "-f",
       `ref=${ref}`,
-      "-F",
+      "-f",
       `inputs[ninja_workers]=${maxJobs}`,
       "-F",
       `inputs[use_cache]=${useCache}`,
       "-F",
       `inputs[publish_release]=${publishRelease}`,
-      "-F",
+      "-f",
       `inputs[retry_count]=${String(nextRetryCount)}`,
     ],
     {

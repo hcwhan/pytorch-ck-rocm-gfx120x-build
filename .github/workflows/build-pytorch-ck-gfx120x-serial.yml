@@ -5,6 +5,7 @@ on:
     inputs:
       ninja_workers:
         description: "Ninja 并行编译 worker 数（OOM 时可改为 2）"
+        type: string
         required: false
         default: "4"
       use_cache:
@@ -19,6 +20,7 @@ on:
         default: true
       retry_count:
         description: "看门狗 retry 计数（≥8 不再自动触发）"
+        type: string
         required: false
         default: "0"
 
