@@ -12,11 +12,28 @@ const PYTHON = "python";
 const WATCHDOG_LIMIT_MS = 20 * 60 * 1000;
 const POLL_INTERVAL_MS = 30_000;
 const ABORT_RETRY_INTERVAL_MS = 60_000;
-const MAX_ABORT_ATTEMPTS = 30;
+const MAX_ABORT_ATTEMPTS = 10;
+const SIMPLE_SIGINT_ATTEMPTS = 2;
 
 function appendGithubEnv(key: string, value: string): void {
   if (process.env.GITHUB_ENV) {
     appendFileSync(process.env.GITHUB_ENV, `${key}=${value}\n`, "utf8");
+  }
+}
+
+function sendChildSigint(child: ChildProcess): boolean {
+  if (child.pid === undefined) {
+    console.warn("Watchdog: sendChildSigint skipped (child has no pid)");
+    return false;
+  }
+
+  try {
+    return child.kill("SIGINT");
+  } catch (err) {
+    console.warn(
+      `Watchdog: child.kill(SIGINT) failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return false;
   }
 }
 
@@ -45,7 +62,7 @@ function sendConsoleCtrlC(targetPid: number | undefined): boolean {
     `[void]$type::AttachConsole([uint32]::MaxValue)`,
     `[void]$type::SetConsoleCtrlHandler([IntPtr]::Zero, $false)`,
     `if (-not $ok) { exit 1 }`,
-  ].join("; ");
+  ].join("\n");
 
   const result = spawnSync(
     "powershell",
@@ -217,12 +234,17 @@ function createWatchdog(
       return;
     }
     abortAttempts += 1;
+    const useSimplePath = abortAttempts <= SIMPLE_SIGINT_ATTEMPTS;
+    const signalLabel = useSimplePath ? "SIGINT (child.kill)" : "CTRL_C_EVENT";
     console.log(
-      `Watchdog: abort attempt ${abortAttempts}/${MAX_ABORT_ATTEMPTS}, sending CTRL_C_EVENT`,
+      `Watchdog: abort attempt ${abortAttempts}/${MAX_ABORT_ATTEMPTS}, sending ${signalLabel}`,
     );
-    if (!sendConsoleCtrlC(child.pid)) {
+    const sent = useSimplePath
+      ? sendChildSigint(child)
+      : sendConsoleCtrlC(child.pid);
+    if (!sent) {
       console.warn(
-        `Watchdog: CTRL_C_EVENT attempt ${abortAttempts}/${MAX_ABORT_ATTEMPTS} failed`,
+        `Watchdog: ${signalLabel} attempt ${abortAttempts}/${MAX_ABORT_ATTEMPTS} failed`,
       );
     }
     abortTimer = setTimeout(scheduleNextAbort, ABORT_RETRY_INTERVAL_MS);
