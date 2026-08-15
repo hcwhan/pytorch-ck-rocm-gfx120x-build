@@ -51,10 +51,11 @@
 | `05.hipify` | `tools/amd_build/build_amd.py`（生成 `c10/hip/`、`THH/` 等 ROCm 源码） |
 | `06.verify-bootstrap` | worktree cache hit 后校验 prep+patch+hipify 产物（不含 `build/`）；失败则 fallback miss |
 | `07.pin-mtimes` | bootstrap 末尾将 PT 工作树 + ROCm SDK 外部头文件 mtime 固定为 `SOURCE_DATE_EPOCH`（满足 ninja 3 条 dirty 检查；见下方"缓存复用"节） |
-| `08.build` | cache-hit 时 `ninja -C`（跳过 CMake reconfigure，保 `.ninja_log`）；cache-miss 时 `setup.py build`（cmake configure + 全量编译）；`initBuildEnv` 含 ccache launcher + requirements |
+| `08.build` | cache-hit 时 `ninja -C`（跳过 CMake reconfigure，保 `.ninja_log`）；cache-miss 时 `setup.py build`（cmake configure + 全量编译）；`initBuildEnv` 含 ccache launcher + requirements；**自 bootstrap 起 5h 看门狗（30s 轮询 → CTRL_C 重复中止 → save 后 workflow retry）**（详见 `docs/watchdog-design.md`） |
 | `09.wheel` | `setup.py bdist_wheel` → 复制到 `dist/`（env 重设，不重复 pip install） |
 | `10.verify` | CPU 冒烟（wheel CK fwd dim 符号 + 禁用 bwd 负向断言 + `is_ck_sdpa_available()`）；manifest 含 `ck_disable_bwd` |
 | `11.publish` | Release 元数据 |
+| `12.watchdog-retry` | 看门狗中断后 dispatch retry workflow（`gh api` 3 次重试 + 等 300s concurrency cancel；需 env `USE_CACHE`/`RETRY_COUNT`/`PUBLISH_RELEASE`/`GH_TOKEN`） |
 | `build/build-pytorch-steps.py` | `--step build` / `--step wheel` |
 | `build/add-make-kernel-pt.py` | CK FMHA blob `make_kernel`→`make_kernel_pt`（`04.patch` 复制到 PT 源码 `ck/`） |
 | `test/gpu-smoke-test.py` | 部署前 GPU 校验（gfx120x 真机；CI 不跑） |
@@ -91,6 +92,7 @@
 - **worktree hit bootstrap**：`06.verify-bootstrap` 通过则 skip prep/patch/hipify；verify 失败 fallback miss
 - **compile**：cache-hit 时 `ninja -C build install`（跳过 CMake reconfigure，保 `.ninja_log`）；cache-miss 时 `setup.py build`
 - **ccache**：`CMAKE_*_COMPILER_LAUNCHER=ccache`；GHA cache `ccache-v2-lock[…]-patch[…]-msvc[…]-rocmClang[…]-ninja[…]-cmake[…]`（无 `lockWheel`）
+- **看门狗 5h 优雅中断**：A00 第一步写 `JOB_START_TIME`；`08.build` 每 30s 检查距 job 开始是否 ≥5h，超时则写 `ABORT_TRIGGERED`/`COMPILE_COMPLETE=false` 后重复 `CTRL_C_EVENT`（1min×30，兜底 `taskkill`）；A04 save 后 `12.watchdog-retry` 在 `use_cache=true && retry_count<8` 时 dispatch retry（3 次重试）并等 300s；wheel 等下游 `if: success()`（详见 `docs/watchdog-design.md`）
 
 ## 缓存复用
 

@@ -15,6 +15,13 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Record job start time
+      shell: pwsh
+      run: |
+        $epochMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+        "JOB_START_TIME=$epochMs" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+        Write-Host "JOB_START_TIME=$epochMs"
+
     - name: Setup Node.js
       uses: actions/setup-node@v7
       with:

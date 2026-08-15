@@ -17,6 +17,10 @@ on:
         type: boolean
         required: false
         default: true
+      retry_count:
+        description: "看门狗 retry 计数（≥8 不再自动触发）"
+        required: false
+        default: "0"
 
 concurrency:
   group: build-torch-ck-gfx120x-serial
@@ -30,6 +34,8 @@ env:
   MAX_JOBS: ${{ github.event.inputs.ninja_workers }}
   PT_SRC: C:\pt\pytorch
   USE_CACHE: ${{ github.event.inputs.use_cache != 'false' && 'true' || 'false' }}
+  PUBLISH_RELEASE: ${{ github.event.inputs.publish_release != 'false' && 'true' || 'false' }}
+  RETRY_COUNT: ${{ github.event.inputs.retry_count || '0' }}
 
 jobs:
   compile-and-wheel:
@@ -54,7 +60,15 @@ jobs:
           use-cache: ${{ env.USE_CACHE }}
           run: npx tsx scripts/cli.ts 08.build --pt-src $env:PT_SRC
 
+      - name: Retry after watchdog abort
+        if: always() && !cancelled() && env.ABORT_TRIGGERED == 'true' && env.COMPILE_COMPLETE != 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: npx tsx scripts/cli.ts 12.watchdog-retry
+
       - name: Write worktree cache metadata
+        if: success()
         shell: pwsh
         run: |
           $entry = [ordered]@{
@@ -67,10 +81,12 @@ jobs:
           $entry | ConvertTo-Json -Depth 3 -AsArray | Out-File -FilePath dist/build-caches.json -Encoding utf8
 
       - name: Package torch wheel
+        if: success()
         shell: pwsh
         run: npx tsx scripts/cli.ts 09.wheel --pt-src $env:PT_SRC --dist-dir $env:GITHUB_WORKSPACE\dist
 
       - name: Verify wheel, upload artifact, and publish
+        if: success()
         uses: "./.github/actions/A99.pt-verify-publish"
         with:
           build-caches: dist/build-caches.json

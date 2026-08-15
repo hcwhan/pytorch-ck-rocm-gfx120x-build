@@ -11,6 +11,7 @@ import { runBuild } from "./commands/08.build.js";
 import { runWheel } from "./commands/09.wheel.js";
 import { runVerify } from "./commands/10.verify.js";
 import { runPublish } from "./commands/11.publish.js";
+import { runWatchdogRetry } from "./commands/12.watchdog-retry.js";
 
 const program = new Command();
 
@@ -93,8 +94,8 @@ program
     "编译 PyTorch（setup.py build；有效 cmake 构建树存在时上游可能 skip configure）",
   )
   .requiredOption("--pt-src <path>")
-  .action((opts) => {
-    runBuild({ ptSrc: opts.ptSrc });
+  .action(async (opts) => {
+    await runBuild({ ptSrc: opts.ptSrc });
   });
 
 program
@@ -136,6 +137,15 @@ program
       distDir: opts.distDir,
       workflowName: opts.workflowName,
     });
+  });
+
+program
+  .command("12.watchdog-retry")
+  .description(
+    "看门狗中断后 dispatch retry workflow（A04 save 完成后由 workflow 条件触发）",
+  )
+  .action(async () => {
+    await runWatchdogRetry();
   });
 
 program.parseAsync(process.argv).catch((error: unknown) => {

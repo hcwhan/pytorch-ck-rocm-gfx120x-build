@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 
 interface RunOptions {
   quiet?: boolean;
@@ -49,4 +49,37 @@ export function runCapture(
   }
 
   return result.stdout ?? "";
+}
+
+export interface SpawnAsyncResult {
+  exitCode: number | null;
+  signal: NodeJS.Signals | null;
+}
+
+export interface SpawnAsyncHandle {
+  child: ChildProcess;
+  completed: Promise<SpawnAsyncResult>;
+}
+
+export function spawnAsync(
+  command: string,
+  args: readonly string[],
+): SpawnAsyncHandle {
+  const { promise, resolve, reject } = Promise.withResolvers<SpawnAsyncResult>();
+  const child = spawn(command, args as string[], {
+    env: process.env,
+    stdio: "inherit",
+    shell: false,
+  });
+  child.on("error", reject);
+  child.on("exit", (exitCode, signal) => resolve({ exitCode, signal }));
+  return { child, completed: promise };
+}
+
+/** @deprecated Prefer spawnAsync when the caller needs child.pid (e.g. watchdog force-kill). */
+export async function runAsync(
+  command: string,
+  args: readonly string[],
+): Promise<SpawnAsyncResult> {
+  return spawnAsync(command, args).completed;
 }
