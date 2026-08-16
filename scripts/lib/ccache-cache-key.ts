@@ -1,6 +1,6 @@
 import { cacheKeyToken } from "./cache-key-token.js";
 
-export const CCACHE_CACHE_PREFIX = "ccache-v2";
+export const CCACHE_CACHE_PREFIX = "ccache-v3";
 
 
 export function buildCcacheCacheKey(options: {

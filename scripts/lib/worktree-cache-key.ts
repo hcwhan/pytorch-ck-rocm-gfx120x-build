@@ -1,6 +1,6 @@
 import { cacheKeyToken } from "./cache-key-token.js";
 
-export const WORKTREE_CACHE_PREFIX = "worktree-v2";
+export const WORKTREE_CACHE_PREFIX = "worktree-v3";
 
 
 export function buildWorktreeCacheKey(options: {
