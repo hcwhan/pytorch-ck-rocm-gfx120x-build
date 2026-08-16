@@ -756,6 +756,7 @@ function buildMeBwdCkStubPoints(): PatchPoint[] {
  * 4. aten/CMakeLists.txt — #188114 arch whitelist；可选 inference-only（buildInferenceOnlyAtenPoints）
  * 5. bwd *.hip — 可选 inference-only stub（buildMha* / buildMeBwdCkStubPoints）
  * 6. cmake/External/aotriton.cmake — 注入 CMAKE_SUPPRESS_REGENERATION=ON（local）
+ * 7. hip/flash_attn/flash_api.h — 移除 mha_fwd_ck 声明的 TORCH_API（local，Windows dllimport）
  */
 export function runPatch(options: { ptSrc: string }): void {
   const root = path.resolve(options.ptSrc);
@@ -894,6 +895,27 @@ export function runPatch(options: { ptSrc: string }): void {
         after:
           `#if (defined(__gfx90a__) || defined(__gfx942__) || defined(__gfx950__) || \\\n ${gpuArchDefines})`,
         replaceAll: true,
+      },
+    ],
+  );
+
+  applyPoints(
+    path.join(
+      root,
+      "aten/src/ATen/native/transformers/hip/flash_attn/flash_api.h",
+    ),
+    [
+      // local：mha_fwd_ck 声明带 TORCH_API。Windows 下 ck_sdpa 静态库 TU 中展开为
+      // __declspec(dllimport)，定义本身被打标 → lld-link 无法用静态档案定义解析
+      // dllimport 引用（"cannot be used because it is not an import library"）。
+      // 该符号仅在 torch_hip.dll 内部消费，无需导出；去掉后与同块其余 CK 声明对齐。
+      {
+        name: "flash-api-mha-fwd-ck-drop-torch-api",
+        before: `// CK implementation
+TORCH_API
+std::tuple<`,
+        after: `// CK implementation
+std::tuple<`,
       },
     ],
   );
