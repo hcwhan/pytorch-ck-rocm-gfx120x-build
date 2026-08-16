@@ -184,11 +184,13 @@ import torch
 
 expected_local = sys.argv[1]
 expected_rocm = sys.argv[2]
-filename_local = wheel_filename_local(expected_local)
-local_tag = f'+{filename_local}'
-if local_tag not in torch.__version__:
+local_tags = [
+    f'+{expected_local}',
+    f'+{wheel_filename_local(expected_local)}',
+]
+if not any(tag in torch.__version__ for tag in local_tags):
     raise SystemExit(
-        f'ERROR: torch version missing local tag {local_tag!r}: {torch.__version__!r}'
+        f'ERROR: torch version missing local tag {local_tags!r}: {torch.__version__!r}'
     )
 if torch.version.rocm != expected_rocm:
     raise SystemExit(
