@@ -38,6 +38,15 @@ def _ensure_setup_skip_build_deps_patch(pt_src: Path) -> None:
     print(f"Patched setup.py for {_SETUP_SKIP_BUILD_DEPS_MARKER}", flush=True)
 
 
+def _wheel_subprocess_env() -> dict[str, str]:
+    """Wheel 阶段 setup.py 子进程：跳过 build_deps + UTF-8（aotriton.images 全角文件名）。"""
+    env = os.environ.copy()
+    env[_SETUP_SKIP_BUILD_DEPS_MARKER] = "1"
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    return env
+
+
 def _exec_setup_py(
     pt_src: Path,
     command_argv: list[str],
@@ -68,8 +77,7 @@ def build_wheel(pt_src: Path, *, verbose: bool = False) -> None:
     # build 仅同步 torch/ -> build/lib；bdist_wheel --skip-build 只打包。
     _ensure_setup_skip_build_deps_patch(pt_src)
 
-    wheel_env = os.environ.copy()
-    wheel_env[_SETUP_SKIP_BUILD_DEPS_MARKER] = "1"
+    wheel_env = _wheel_subprocess_env()
 
     sync_argv = ["build"]
     if verbose:

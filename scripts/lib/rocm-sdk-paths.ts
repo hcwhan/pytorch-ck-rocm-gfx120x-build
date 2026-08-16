@@ -1,3 +1,4 @@
+import path from "node:path";
 import { runCapture } from "./exec.js";
 
 const PYTHON = "python";
@@ -41,4 +42,14 @@ export function getRocmSdkPaths(): { coreRoot: string; develRoot: string } {
     coreRoot: coreRootLine.slice("CORE_ROOT=".length),
     develRoot: develRootLine.slice("DEVEL_ROOT=".length),
   };
+}
+
+/** Windows import / DLL 加载：与 init-build-env 的 PATH 前缀一致。 */
+export function getRocmSdkDllDirectories(): string[] {
+  const { coreRoot, develRoot } = getRocmSdkPaths();
+  return [
+    path.join(develRoot, "bin"),
+    path.join(coreRoot, "lib"),
+    path.join(coreRoot, "lib", "llvm", "bin"),
+  ];
 }

@@ -11,6 +11,7 @@ import {
   validateBuildCachesForVariant,
 } from "../lib/build-caches.js";
 import { run } from "../lib/exec.js";
+import { getRocmSdkDllDirectories } from "../lib/rocm-sdk-paths.js";
 import {
   requireGithubActionsEnv,
   requireLockEnv,
@@ -30,7 +31,9 @@ expected_local = sys.argv[3]
 ck_disable_bwd = sys.argv[4]
 min_pyd_bytes = 512 * 1024
 min_core_dll_bytes = 512 * 1024
+min_aotriton_dll_bytes = 64 * 1024
 min_ck_binary_bytes = 64 * 1024
+min_aotriton_aks2_count = 10
 
 def wheel_filename_local(local: str) -> str:
     return local.replace('-', '.').replace('_', '.')
@@ -72,14 +75,28 @@ with zipfile.ZipFile(wheel) as zf:
         required_dlls = [
             'torch/lib/torch_python.dll',
             'torch/lib/torch_hip.dll',
+            'torch/lib/aotriton_v2.dll',
         ]
         for dll in required_dlls:
             if dll not in names:
                 raise SystemExit(f'ERROR: required Windows wheel binary missing: {dll}')
             info = zf.getinfo(dll)
-            if info.file_size < min_core_dll_bytes:
+            min_bytes = min_aotriton_dll_bytes if dll.endswith('aotriton_v2.dll') else min_core_dll_bytes
+            if info.file_size < min_bytes:
                 raise SystemExit(f'ERROR: {dll} too small ({info.file_size} bytes)')
             print(f'OK {dll} size={info.file_size}')
+
+        aotriton_prefix = 'torch/lib/aotriton.images/'
+        aks2_files = [
+            name for name in names
+            if name.startswith(aotriton_prefix) and name.endswith('.aks2')
+        ]
+        if len(aks2_files) < min_aotriton_aks2_count:
+            raise SystemExit(
+                f'ERROR: aotriton.images .aks2 count {len(aks2_files)} '
+                f'< {min_aotriton_aks2_count}'
+            )
+        print(f'OK aotriton.images aks2 count={len(aks2_files)}')
 
     ck_binaries = [
         name for name in names
@@ -150,6 +167,44 @@ with zipfile.ZipFile(wheel) as zf:
         )
     print(f'OK METADATA Name=torch Version={wheel_version}')
 `.trim();
+
+const TORCH_IMPORT_CHECK_CODE = `
+import os
+import sys
+
+def wheel_filename_local(local: str) -> str:
+    return local.replace('-', '.').replace('_', '.')
+
+if sys.platform == 'win32':
+    for dll_dir in sys.argv[3:]:
+        if os.path.isdir(dll_dir):
+            os.add_dll_directory(dll_dir)
+
+import torch
+
+expected_local = sys.argv[1]
+expected_rocm = sys.argv[2]
+filename_local = wheel_filename_local(expected_local)
+local_tag = f'+{filename_local}'
+if local_tag not in torch.__version__:
+    raise SystemExit(
+        f'ERROR: torch version missing local tag {local_tag!r}: {torch.__version__!r}'
+    )
+if torch.version.rocm != expected_rocm:
+    raise SystemExit(
+        f'ERROR: rocm version mismatch: {torch.version.rocm!r} != {expected_rocm!r}'
+    )
+if not torch.backends.cuda.is_ck_sdpa_available():
+    raise SystemExit('ERROR: torch.backends.cuda.is_ck_sdpa_available() is False')
+print('OK torch', torch.__version__)
+print('OK rocm', torch.version.rocm)
+print('OK is_ck_sdpa_available', torch.backends.cuda.is_ck_sdpa_available())
+`.trim();
+
+function prependPath(prefix: string): void {
+  const current = process.env.PATH ?? "";
+  process.env.PATH = current ? `${prefix}${path.delimiter}${current}` : prefix;
+}
 
 function matchesGlob(name: string, pattern: string): boolean {
   const regex = new RegExp(
@@ -278,32 +333,17 @@ export function runVerify(options: {
 
   run(PYTHON, ["-m", "pip", "install", "--force-reinstall", whlPath]);
 
+  const rocmDllDirs = getRocmSdkDllDirectories();
+  prependPath(rocmDllDirs.join(path.delimiter));
+  console.log(`ROCm DLL directories: ${rocmDllDirs.join("; ")}`);
+
   console.log("=== torch import checks (CPU) ===");
   run(PYTHON, [
     "-c",
-    [
-      "import sys",
-      "import torch",
-      "def wheel_filename_local(local: str) -> str:",
-      "    return local.replace('-', '.').replace('_', '.')",
-      "expected_local = sys.argv[1]",
-      "expected_rocm = sys.argv[2]",
-      "filename_local = wheel_filename_local(expected_local)",
-      "local_tag = f'+{filename_local}'",
-      "if local_tag not in torch.__version__:",
-      "    raise SystemExit(",
-      "        f'ERROR: torch version missing local tag {local_tag!r}: {torch.__version__!r}'",
-      "    )",
-      "if torch.version.rocm != expected_rocm:",
-      "    raise SystemExit(f'ERROR: rocm version mismatch: {torch.version.rocm!r} != {expected_rocm!r}')",
-      "if not torch.backends.cuda.is_ck_sdpa_available():",
-      "    raise SystemExit('ERROR: torch.backends.cuda.is_ck_sdpa_available() is False')",
-      "print('OK torch', torch.__version__)",
-      "print('OK rocm', torch.version.rocm)",
-      "print('OK is_ck_sdpa_available', torch.backends.cuda.is_ck_sdpa_available())",
-    ].join("\n"),
+    TORCH_IMPORT_CHECK_CODE,
     wheelLocalVersion,
     rocmVersion,
+    ...rocmDllDirs,
   ]);
 
   const manifestPath = path.join(distDir, "wheel.manifest.json");
