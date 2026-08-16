@@ -29,6 +29,7 @@ ck_opt_dim = sys.argv[2]
 expected_local = sys.argv[3]
 ck_disable_bwd = sys.argv[4]
 min_pyd_bytes = 512 * 1024
+min_core_dll_bytes = 512 * 1024
 min_ck_binary_bytes = 64 * 1024
 
 def wheel_filename_local(local: str) -> str:
@@ -47,6 +48,8 @@ if local_tag not in wheel_name:
     )
 print(f'OK wheel local tag {filename_local}')
 
+is_windows_wheel = 'win_amd64' in wheel_name
+
 with zipfile.ZipFile(wheel) as zf:
     names = zf.namelist()
     pyds = [name for name in names if name.endswith('.pyd') and 'torch' in name.lower()]
@@ -54,9 +57,29 @@ with zipfile.ZipFile(wheel) as zf:
         raise SystemExit('ERROR: torch .pyd not found in wheel archive')
     for name in pyds[:3]:
         info = zf.getinfo(name)
+        base = Path(name).name
+        if is_windows_wheel and base.startswith('_C') and base.endswith('.pyd'):
+            print(
+                f'OK {name} size={info.file_size} '
+                f'(Windows stub loader from stub.c, size check skipped)'
+            )
+            continue
         if info.file_size < min_pyd_bytes:
             raise SystemExit(f'ERROR: {name} too small ({info.file_size} bytes)')
         print(f'OK {name} size={info.file_size}')
+
+    if is_windows_wheel:
+        required_dlls = [
+            'torch/lib/torch_python.dll',
+            'torch/lib/torch_hip.dll',
+        ]
+        for dll in required_dlls:
+            if dll not in names:
+                raise SystemExit(f'ERROR: required Windows wheel binary missing: {dll}')
+            info = zf.getinfo(dll)
+            if info.file_size < min_core_dll_bytes:
+                raise SystemExit(f'ERROR: {dll} too small ({info.file_size} bytes)')
+            print(f'OK {dll} size={info.file_size}')
 
     ck_binaries = [
         name for name in names
