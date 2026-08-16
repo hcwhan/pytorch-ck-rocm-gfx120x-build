@@ -18,19 +18,25 @@ export function runPinMtimes(options: { ptSrc: string }): void {
     `Pinning worktree mtimes under ${ptSrc} to SOURCE_DATE_EPOCH=${epochSeconds} (${commitDate})`,
   );
 
-  // Pin ROCm SDK external headers (clang internal headers, ROCm/HIP headers).
-  // These are installed via pip toolchain cache and have mtime newer than the
-  // cached .obj files, causing ninja to mark all edges dirty
-  // ("output older than most recent input yvals_core.h").
-  // Pinning them to SOURCE_DATE_EPOCH makes .obj (from cache, ~build time)
-  // newer than all inputs, satisfying ninja's dirty check 1.
+  // Pin ROCm SDK external headers and import libraries (.lib). Headers and libs
+  // are installed via pip toolchain cache and can have mtime newer than cached
+  // .obj / .dll outputs, causing ninja mass recompile
+  // ("output older than most recent input amdhip64.lib").
   const { coreRoot, develRoot } = getRocmSdkPaths();
   const clangIncludeCore = path.join(coreRoot, "lib", "llvm", "lib", "clang");
   const clangIncludeDevel = path.join(develRoot, "lib", "llvm", "lib", "clang");
   const rocmInclude = path.join(develRoot, "include");
-  const externalDirs = [clangIncludeCore, clangIncludeDevel, rocmInclude];
+  const rocmLibCore = path.join(coreRoot, "lib");
+  const rocmLibDevel = path.join(develRoot, "lib");
+  const externalDirs = [
+    clangIncludeCore,
+    clangIncludeDevel,
+    rocmInclude,
+    rocmLibCore,
+    rocmLibDevel,
+  ];
 
-  console.log(`Pinning external headers: ${externalDirs.join(", ")}`);
+  console.log(`Pinning external toolchain paths: ${externalDirs.join(", ")}`);
 
   const startedAt = Date.now();
   const { files, directories } = pinMtimes({
