@@ -8,6 +8,7 @@ const PATCH_INPUT_PATHS = [
   "scripts/commands/05.hipify.ts",
   "scripts/lib/gpu-archs.ts",
   "build/add-make-kernel-pt.py",
+  "build/patch-aotriton-windows.py",
 ] as const;
 
 export function buildPatchHash8(workspaceRoot: string): string {

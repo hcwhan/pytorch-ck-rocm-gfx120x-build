@@ -755,7 +755,7 @@ function buildMeBwdCkStubPoints(): PatchPoint[] {
  * 3. ck/CMakeLists.txt — Windows codegen 适配 + CK_TARGETS（buildCkCmakePoints）
  * 4. aten/CMakeLists.txt — #188114 arch whitelist；可选 inference-only（buildInferenceOnlyAtenPoints）
  * 5. bwd *.hip — 可选 inference-only stub（buildMha* / buildMeBwdCkStubPoints）
- * 6. cmake/External/aotriton.cmake — 注入 CMAKE_SUPPRESS_REGENERATION=ON（local）
+ * 6. cmake/External/aotriton.cmake — 注入 CMAKE_SUPPRESS_REGENERATION=ON、AOTriton clang-cl PATCH（local）
  * 7. hip/flash_attn/flash_api.h — 移除 mha_fwd_ck 声明的 TORCH_API（local，Windows dllimport）
  */
 export function runPatch(options: { ptSrc: string }): void {
@@ -863,6 +863,33 @@ export function runPatch(options: { ptSrc: string }): void {
       -DAOTRITON_TARGET_ARCH:STRING=\${PYTORCH_ROCM_ARCH}
       -DCMAKE_INSTALL_PREFIX:FILEPATH=\${__AOTRITON_INSTALL_DIR}`,
     },
+    // local：AOTriton 0.12b 在 clang-cl 下 -finput-charset 与 enum dllexport 产生大量警告
+    {
+      name: "aotriton-win-clang-cl-patch-command",
+      before: `    message(STATUS "PYTORCH_ROCM_ARCH \${PYTORCH_ROCM_ARCH}")
+
+    ExternalProject_Add(\${project}
+      GIT_REPOSITORY https://github.com/ROCm/aotriton.git
+      GIT_SUBMODULES_RECURSE \${RECURSIVE}
+      GIT_TAG \${__AOTRITON_CI_COMMIT}
+      PREFIX \${__AOTRITON_EXTERN_PREFIX}
+      CMAKE_CACHE_ARGS`,
+      after: `    message(STATUS "PYTORCH_ROCM_ARCH \${PYTORCH_ROCM_ARCH}")
+
+    if(WIN32)
+      set(__AOTRITON_WIN_PATCH PATCH_COMMAND \${Python3_EXECUTABLE} \${CMAKE_CURRENT_LIST_DIR}/patch-aotriton-windows.py)
+    else()
+      set(__AOTRITON_WIN_PATCH)
+    endif()
+
+    ExternalProject_Add(\${project}
+      GIT_REPOSITORY https://github.com/ROCm/aotriton.git
+      GIT_SUBMODULES_RECURSE \${RECURSIVE}
+      GIT_TAG \${__AOTRITON_CI_COMMIT}
+      PREFIX \${__AOTRITON_EXTERN_PREFIX}
+      \${__AOTRITON_WIN_PATCH}
+      CMAKE_CACHE_ARGS`,
+    },
   ]);
 
   applyPoints(path.join(root, "aten/src/ATen/Context.cpp"), [
@@ -933,6 +960,12 @@ std::tuple<`,
   // local：部署 Python 版 add_make_kernel_pt，替代上游 #143695 add_make_kernel_pt.sh
   copyFileSync(addMakeKernelPtSrc, addMakeKernelPtDst);
   console.log(`  OK ck-add-make-kernel-pt-py: copied to ${addMakeKernelPtDst}`);
+
+  const patchAotritonSrc = path.join(repoRoot, "build/patch-aotriton-windows.py");
+  const patchAotritonDst = path.join(root, "cmake/External/patch-aotriton-windows.py");
+  // local：AOTriton ExternalProject PATCH_COMMAND 入口（clang-cl 编译警告）
+  copyFileSync(patchAotritonSrc, patchAotritonDst);
+  console.log(`  OK aotriton-patch-windows-py: copied to ${patchAotritonDst}`);
 
   const ckCmake = path.join(ckDir, "CMakeLists.txt");
   applyPoints(ckCmake, buildCkCmakePoints(ckTargets, ckOptDim, disableBwd));
