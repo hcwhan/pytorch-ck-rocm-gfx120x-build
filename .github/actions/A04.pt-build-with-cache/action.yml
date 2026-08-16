@@ -33,7 +33,7 @@ runs:
       run: ${{ inputs.run }}
 
     - name: Delete all stale worktree caches
-      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && inputs.cache-key != ''
+      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && inputs.cache-key != '' && env.ABORT_FORCE_KILLED != 'true'
       shell: pwsh
       env:
         GH_TOKEN: ${{ github.token }}
@@ -56,14 +56,14 @@ runs:
 
     - name: Save worktree cache
       id: save-worktree-cache
-      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && inputs.cache-key != ''
+      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && inputs.cache-key != '' && env.ABORT_FORCE_KILLED != 'true'
       uses: "./.github/actions/A05.worktree-cache-save"
       with:
         pt-src: ${{ inputs.pt-src }}
         cache-key: ${{ inputs.cache-key }}
 
     - name: Delete all stale ccache entries
-      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && env.CCACHE_CACHE_KEY != ''
+      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && env.CCACHE_CACHE_KEY != '' && env.ABORT_FORCE_KILLED != 'true'
       shell: pwsh
       env:
         GH_TOKEN: ${{ github.token }}
@@ -85,5 +85,5 @@ runs:
         Write-Host "Deleted $deleted stale ccache entries"
 
     - name: Save ccache
-      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && env.CCACHE_CACHE_KEY != ''
+      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && env.CCACHE_CACHE_KEY != '' && env.ABORT_FORCE_KILLED != 'true'
       uses: "./.github/actions/A06.ccache-save"

@@ -63,7 +63,7 @@ jobs:
           run: npx tsx scripts/cli.ts 08.build --pt-src $env:PT_SRC
 
       - name: Retry after watchdog abort
-        if: always() && !cancelled() && env.ABORT_TRIGGERED == 'true' && env.COMPILE_COMPLETE != 'true'
+        if: always() && !cancelled() && env.ABORT_TRIGGERED == 'true' && env.COMPILE_COMPLETE != 'true' && env.ABORT_FORCE_KILLED != 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

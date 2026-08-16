@@ -59,6 +59,12 @@ function dispatchRetryWorkflow(nextRetryCount: number): boolean {
 }
 
 export async function runWatchdogRetry(): Promise<void> {
+  if (process.env.ABORT_FORCE_KILLED === "true") {
+    throw new Error(
+      "Watchdog force-killed (ABORT_FORCE_KILLED=true); cannot retry",
+    );
+  }
+
   if (requireEnv("USE_CACHE") !== "true") {
     throw new Error("Watchdog abort with use_cache=false; cannot retry");
   }

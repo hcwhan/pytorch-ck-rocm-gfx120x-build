@@ -19,14 +19,16 @@ GitHub-hosted runner 的 job 执行硬上限为 **6 小时**（不可突破）�
 
 1. A00 bootstrap **第一步**写入 `JOB_START_TIME`（UTC epoch ms）。
 2. bootstrap 完成 fingerprint + cache restore 后，`08.build` 异步 `spawn` 编译，
-   同时每 **30s** 轮询：`Date.now() - JOB_START_TIME >= 5h` 且子进程仍在运行 → 进入中止流程。
+   同时 `scripts/lib/watchdog.ts` 注册 **单次 deadline `setTimeout`**：
+   `jobStartMs + 5h - Date.now()` 到期且子进程仍在运行 → 进入中止流程。
 3. 中止流程：**先**写 `ABORT_TRIGGERED=true`、`COMPILE_COMPLETE=false` 到 `$GITHUB_ENV`，
-   再经 PowerShell `GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0)` 广播 Ctrl+C；
-   若子进程仍未退出，**每 1 分钟**重复发送，最多 **30 次**；30 次后 `taskkill /PID /T /F` 强杀子进程树。
-   Node 通过 `process.on('SIGINT')` 拦截自身信号以保持存活。
+   再 `child.kill("SIGINT")`；若子进程仍未退出，**每 1 分钟**重复发送，最多 **3 次**；
+   3 次后 `taskkill /PID /T /F` 强杀子进程树，并写 `ABORT_FORCE_KILLED=true`。
+   **SIGINT 内退出**：A04 照常 save；**需 taskkill**：跳过 save/delete cache，且不触发 retry。
+   中止期间 Node 通过 `process.on('SIGINT')` + `swallowSigint` 拦截误传到自身的 SIGINT，以保持存活并完成 save。
 4. 编译正常完成：写 `COMPILE_COMPLETE=true`，继续 wheel 打包。
 5. A04 save（`use_cache=true` 时失败也 save）存档 worktree + ccache。
-6. save 后 **`12.watchdog-retry`**（workflow 条件：`!cancelled() && ABORT_TRIGGERED && !COMPILE_COMPLETE`）：
+6. save 后 **`12.watchdog-retry`**（workflow 条件：`!cancelled() && ABORT_TRIGGERED && !COMPILE_COMPLETE && ABORT_FORCE_KILLED != 'true'`）：
    - `use_cache=false` → 报错退出
    - `retry_count >= 8` → 报错退出
    - 否则 `gh api workflow_dispatch` 触发 retry（**3 次重试，间隔 1min**），
@@ -45,19 +47,21 @@ GitHub-hosted runner 的 job 执行硬上限为 **6 小时**（不可突破）�
 | 变量 | 写入位置 | 含义 |
 |------|----------|------|
 | `JOB_START_TIME` | A00 第一步 | bootstrap 开始 UTC epoch ms |
-| `ABORT_TRIGGERED` | `08.build` 看门狗 | `true` = 已触发优雅中止 |
+| `ABORT_TRIGGERED` | `watchdog.ts`（`08.build` 调用） | `true` = 已触发优雅中止 |
+| `ABORT_FORCE_KILLED` | `watchdog.ts` | `true` = 3× SIGINT 失败、已 taskkill；**不 save、不 retry** |
 | `COMPILE_COMPLETE` | `08.build` | `true` = 编译成功；中止时写 `false` |
 | `RETRY_COUNT` | workflow input → env | 当前 retry 计数，仅 save 后 `12.watchdog-retry` 判断 |
 | `PUBLISH_RELEASE` | workflow input → env | retry dispatch 时继承 `publish_release` |
 
-## 为什么用 CTRL_C_EVENT
+## 为什么用 SIGINT + 吞信号
 
-| API | 行为 |
-|-----|------|
-| `GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0)` | 广播 Ctrl+C，ninja `Cleanup()` + exit 130 |
-| `taskkill /PID /T /F` | 30 次优雅中止失败后的兜底强杀 |
+| 手段 | 行为 |
+|------|------|
+| `child.kill("SIGINT")` | 向编译子进程发 SIGINT，ninja 通常 `Cleanup()` 后以非 0 退出 |
+| `swallowSigint` | 中止期间父 Node 忽略误传的 SIGINT，避免 save/retry 步骤来不及执行 |
+| `taskkill /PID /T /F` | 3 次 SIGINT 仍不退出时的兜底强杀 |
 
-ninja 收到 Ctrl+C 后删除 mtime 变化的半截输出文件，再以 exit 130 退出。
+不再使用 PowerShell `GenerateConsoleCtrlEvent(CTRL_C_EVENT)` 内联脚本；实现集中在 `scripts/lib/watchdog.ts`。
 
 ## 实现细节
 
@@ -69,15 +73,23 @@ bootstrap composite 第一步（Setup Node 之前）写入 `$GITHUB_ENV`。
 
 `spawnAsync` 返回 `{ child, completed }`，暴露 `child.pid` 供看门狗 `taskkill` 强杀。
 
-### 08.build.ts: 看门狗
+### scripts/lib/watchdog.ts
 
-- 每 30s 检查 `Date.now() - JOB_START_TIME >= 5h
-- 超时且子进程运行中 → 写 env → 立即首次 CTRL_C → 每 1min 最多 30 次 → 强杀
+- `createWatchdog(child, jobStartMs)`：单次 deadline `setTimeout`，到期调用 `onDeadline`
+- 超时且子进程运行中 → 写 env → `abortChild()` 异步循环：最多 3× SIGINT（间隔 1min）→ 写 `ABORT_FORCE_KILLED` → `taskkill`
+- `08.build` 在 `finally` 中 `await whenAbortSettled()`，确保 env 写入后再结束 step
+- `stop()`：清除 deadline timer、移除 SIGINT listener、关闭 swallow
+- `wasAborted()`：`aborted || forceKilled`
+
+### 08.build.ts
+
+- `spawn` 编译子进程后调用 `createWatchdog(buildHandle.child, jobStartMs)`
 - 成功：`COMPILE_COMPLETE=true`；看门狗中止：throw 使 build step 失败以触发 save
 
 ### 12.watchdog-retry.ts
 
 - workflow `if:` 条件触发后调用 `npx tsx scripts/cli.ts 12.watchdog-retry`
+- 脚本入口校验 `ABORT_FORCE_KILLED=true` → 报错退出（与 workflow `if:` 双重门禁）
 - `retry_count` 仅在 save 后判断（`< 8` 才 dispatch）
 - `gh api workflow_dispatch`：3 次重试，间隔 60s，全失败则 throw
 - 等 300s，未 cancel 则 throw（期望 concurrency 取消当前 run）
@@ -88,6 +100,7 @@ bootstrap composite 第一步（Setup Node 之前）写入 `$GITHUB_ENV`。
 |------|-----------------|-------|
 | 5h 内完成 | success | 不触发 |
 | 看门狗 + retry 成功 cancel | cancelled | 接续编译 |
+| 看门狗 + taskkill（`ABORT_FORCE_KILLED`） | failure | 不 save、不 retry |
 | retry_count ≥ 8 / use_cache=false / dispatch 失败 / 5min 未 cancel | failure | 视情况 |
 
 ## 已知限制（刻意不处理）
@@ -100,7 +113,7 @@ bootstrap composite 第一步（Setup Node 之前）写入 `$GITHUB_ENV`。
 
 | 风险 | 缓解 |
 |------|------|
-| CTRL_C 单次失败 | 每 1min 重复，最多 30 次 |
-| 30 次后仍不退出 | `taskkill /PID /T /F` 强杀 |
+| SIGINT 单次失败 | 每 1min 重复，最多 3 次 |
+| 3 次后仍不退出 | `taskkill` + `ABORT_FORCE_KILLED=true`；A04 跳过 save/delete，workflow 跳过 retry |
 | dispatch 失败 | 3 次重试 + 明确报错 |
-| 并发取消延迟 | 等 300s 后报错，wheel 步骤 `success()` _guard |
+| 并发取消延迟 | 等 300s 后报错，wheel 步骤 `success()` guard |
