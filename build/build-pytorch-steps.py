@@ -9,6 +9,7 @@ from pathlib import Path
 
 _SETUP_SKIP_BUILD_DEPS_MARKER = "PYTORCH_CK_SKIP_BUILD_DEPS"
 _LIBOMP_DLL = "libomp140.x86_64.dll"
+_LIBUV_DLL = "uv.dll"
 _SETUP_SKIP_BUILD_DEPS_BEFORE = (
     "RUN_BUILD_DEPS = True\n"
     "# see if the user passed a quiet flag to setup.py arguments and respect"
@@ -96,6 +97,49 @@ def _ensure_libomp_in_torch_lib(pt_src: Path) -> None:
     print(f"Copied {_LIBOMP_DLL}: {src} -> {dst}", flush=True)
 
 
+def _find_libuv_dll() -> Path | None:
+    if os.name != "nt":
+        return None
+
+    libuv_root = os.environ.get("libuv_ROOT") or os.environ.get("LIBUV_ROOT")
+    if libuv_root:
+        candidate = Path(libuv_root) / "bin" / _LIBUV_DLL
+        if candidate.is_file():
+            return candidate
+
+    path_dirs = os.environ.get("PATH", "").split(os.pathsep)
+    for p in path_dirs:
+        if p.strip():
+            candidate = Path(p.strip()) / _LIBUV_DLL
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def _ensure_libuv_in_torch_lib(pt_src: Path) -> None:
+    """确保 uv.dll 存在于 torch/lib/（分布式 Gloo 传输所需）。"""
+    if os.name != "nt":
+        return
+
+    dst_dir = pt_src / "torch" / "lib"
+    dst = dst_dir / _LIBUV_DLL
+    if dst.exists() and dst.stat().st_size > 0:
+        print(f"libuv (uv.dll) already in torch/lib: {dst}", flush=True)
+        return
+
+    src = _find_libuv_dll()
+    if not src:
+        print(
+            "Warning: uv.dll not found in libuv_ROOT/PATH to copy to torch/lib",
+            flush=True,
+        )
+        return
+
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    dst.write_bytes(src.read_bytes())
+    print(f"Copied {_LIBUV_DLL}: {src} -> {dst}", flush=True)
+
+
 def _wheel_subprocess_env() -> dict[str, str]:
     """Wheel 阶段 setup.py 子进程：跳过 build_deps + UTF-8（aotriton.images 全角文件名）。"""
     env = os.environ.copy()
@@ -135,6 +179,7 @@ def build_wheel(pt_src: Path, *, verbose: bool = False) -> None:
     # build 仅同步 torch/ -> build/lib；bdist_wheel --skip-build 只打包。
     _ensure_setup_skip_build_deps_patch(pt_src)
     _ensure_libomp_in_torch_lib(pt_src)
+    _ensure_libuv_in_torch_lib(pt_src)
 
     wheel_env = _wheel_subprocess_env()
 

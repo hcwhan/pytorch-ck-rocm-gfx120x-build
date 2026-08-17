@@ -36,6 +36,17 @@ export function runPinMtimes(options: { ptSrc: string }): void {
     rocmLibDevel,
   ];
 
+  const libuvRoot = (
+    process.env.libuv_ROOT ||
+    process.env.LIBUV_ROOT ||
+    ""
+  ).trim();
+  if (libuvRoot) {
+    const libuvInclude = path.join(libuvRoot, "include");
+    const libuvLib = path.join(libuvRoot, "lib");
+    externalDirs.push(libuvInclude, libuvLib);
+  }
+
   console.log(`Pinning external toolchain paths: ${externalDirs.join(", ")}`);
 
   const startedAt = Date.now();

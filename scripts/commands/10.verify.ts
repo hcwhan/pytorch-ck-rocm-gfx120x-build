@@ -33,6 +33,7 @@ min_pyd_bytes = 512 * 1024
 min_core_dll_bytes = 512 * 1024
 min_aotriton_dll_bytes = 64 * 1024
 min_libomp_dll_bytes = 256 * 1024
+min_libuv_dll_bytes = 64 * 1024
 min_ck_binary_bytes = 64 * 1024
 min_aotriton_aks2_count = 10
 
@@ -78,6 +79,7 @@ with zipfile.ZipFile(wheel) as zf:
             'torch/lib/torch_hip.dll',
             'torch/lib/aotriton_v2.dll',
             'torch/lib/libomp140.x86_64.dll',
+            'torch/lib/uv.dll',
         ]
         for dll in required_dlls:
             if dll not in names:
@@ -87,6 +89,8 @@ with zipfile.ZipFile(wheel) as zf:
                 min_bytes = min_aotriton_dll_bytes
             elif dll.endswith('libomp140.x86_64.dll'):
                 min_bytes = min_libomp_dll_bytes
+            elif dll.endswith('uv.dll'):
+                min_bytes = min_libuv_dll_bytes
             else:
                 min_bytes = min_core_dll_bytes
             if info.file_size < min_bytes:
@@ -205,9 +209,12 @@ if torch.version.rocm != expected_rocm:
     )
 if not torch.backends.cuda.is_ck_sdpa_available():
     raise SystemExit('ERROR: torch.backends.cuda.is_ck_sdpa_available() is False')
+if not torch.distributed.is_available():
+    raise SystemExit('ERROR: torch.distributed.is_available() is False')
 print('OK torch', torch.__version__)
 print('OK rocm', torch.version.rocm)
 print('OK is_ck_sdpa_available', torch.backends.cuda.is_ck_sdpa_available())
+print('OK distributed.is_available', torch.distributed.is_available())
 `.trim();
 
 function prependPath(prefix: string): void {

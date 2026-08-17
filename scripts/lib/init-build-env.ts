@@ -45,6 +45,7 @@ export function initBuildEnv(options: {
   process.env.MAX_JOBS = String(maxJobs);
   process.env.USE_ROCM = "1";
   process.env.USE_KINETO = "0";
+  process.env.USE_DISTRIBUTED = "1";
   process.env.USE_ROCM_CK_SDPA = "1";
   process.env.PYTORCH_ROCM_ARCH = gpuArchs;
   process.env.DISTUTILS_USE_SDK = "1";
@@ -57,7 +58,7 @@ export function initBuildEnv(options: {
   process.env.CMAKE_BUILD_TYPE = "Release";
   process.env.CMAKE_SUPPRESS_REGENERATION = "ON";
   process.env.CMAKE_ARGS =
-    "-DUSE_ROCM_CK_SDPA=ON -DUSE_ROCM_CK_GEMM=OFF -DBUILD_TEST=OFF -DUSE_KINETO=OFF";
+    "-DUSE_ROCM_CK_SDPA=ON -DUSE_ROCM_CK_GEMM=OFF -DBUILD_TEST=OFF -DUSE_KINETO=OFF -DUSE_DISTRIBUTED=ON";
 
   const versionFile = path.join(ptSrc, "version.txt");
   const baseVersion = readFileSync(versionFile, "utf8").trim();
@@ -80,6 +81,30 @@ export function initBuildEnv(options: {
     ? `${rocmInclude};${process.env.INCLUDE}`
     : rocmInclude;
   process.env.PATH = `${llvmBin};${rocmBin};${process.env.PATH ?? ""}`;
+
+  const libuvRoot = (
+    process.env.libuv_ROOT ||
+    process.env.LIBUV_ROOT ||
+    ""
+  ).trim();
+  if (libuvRoot) {
+    process.env.libuv_ROOT = libuvRoot;
+    process.env.LIBUV_ROOT = libuvRoot;
+    const libuvInclude = path.join(libuvRoot, "include");
+    const libuvLib = path.join(libuvRoot, "lib");
+    const libuvBin = path.join(libuvRoot, "bin");
+    process.env.INCLUDE = process.env.INCLUDE
+      ? `${libuvInclude};${process.env.INCLUDE}`
+      : libuvInclude;
+    process.env.CPATH = process.env.CPATH
+      ? `${libuvInclude};${process.env.CPATH}`
+      : libuvInclude;
+    process.env.LIB = process.env.LIB
+      ? `${libuvLib};${process.env.LIB}`
+      : libuvLib;
+    process.env.PATH = `${libuvBin};${process.env.PATH}`;
+  }
+
   process.env.CC = "clang-cl";
   process.env.CXX = "clang-cl";
 

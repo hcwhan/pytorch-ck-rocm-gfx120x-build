@@ -74,6 +74,58 @@ runs:
         "CCACHE_DIR=$env:RUNNER_TEMP/ccache" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
         "CCACHE_COMPRESS=true" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+    - name: Install libuv
+      shell: pwsh
+      run: |
+        $libuvVersion = "1.40.0-h8ffe710_0"
+        $libuvUrl = "https://s3.amazonaws.com/ossci-windows/libuv-$libuvVersion.tar.bz2"
+        $installRoot = Join-Path $env:RUNNER_TEMP "libuv"
+        New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
+        $archivePath = Join-Path $env:RUNNER_TEMP "libuv.tar.bz2"
+        $tarPath = Join-Path $env:RUNNER_TEMP "libuv.tar"
+
+        $downloaded = $false
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+          try {
+            Write-Host "Downloading libuv (attempt $attempt)..."
+            curl.exe -fsSL -k $libuvUrl -o $archivePath
+            if (Test-Path $archivePath) {
+              $downloaded = $true
+              break
+            }
+          } catch {
+            Write-Host "Download failed: $_"
+            Start-Sleep -Seconds 5
+          }
+        }
+        if (-not $downloaded) {
+          throw "Failed to download libuv from $libuvUrl"
+        }
+
+        7z.exe x -aoa $archivePath "-o$env:RUNNER_TEMP"
+        tar.exe -xf $tarPath -C $installRoot
+
+        $libuvRoot = if (Test-Path (Join-Path $installRoot "Library")) {
+          Join-Path $installRoot "Library"
+        } else {
+          $installRoot
+        }
+
+        $uvDll = Join-Path $libuvRoot "bin/uv.dll"
+        $uvLib = Join-Path $libuvRoot "lib/uv.lib"
+        $uvHeader = Join-Path $libuvRoot "include/uv.h"
+        if (-not (Test-Path $uvDll) -or -not (Test-Path $uvLib) -or -not (Test-Path $uvHeader)) {
+          throw "libuv components missing in $libuvRoot"
+        }
+        Write-Host "OK libuv ready at $libuvRoot"
+
+        "libuv_ROOT=$libuvRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+        "LIBUV_ROOT=$libuvRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+        (Join-Path $libuvRoot "bin") | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+        $env:libuv_ROOT = $libuvRoot
+        $env:LIBUV_ROOT = $libuvRoot
+        $env:Path = "$(Join-Path $libuvRoot 'bin');$env:Path"
+
     - name: Restore pip toolchain cache
       uses: actions/cache/restore@v6
       id: pip-toolchain-cache
