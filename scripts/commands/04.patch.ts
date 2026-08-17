@@ -777,7 +777,7 @@ export function runPatch(options: { ptSrc: string }): void {
       after:
         'cmake_dependent_option(USE_ROCM_CK_SDPA "Use ROCm Composable Kernel for SDPA" ON "USE_ROCM" OFF)',
     },
-    // local：可复现 wheel PE TimeDateStamp；/Brepro 仅作用于 shared/exe（llvm-lib 静态库不接受）
+    // local：可复现 wheel PE TimeDateStamp；/Brepro 仅作用于 shared/exe（llvm-lib 静态库不接受）；Windows clang-cl 诊断警告抑制
     {
       name: "msvc-link-brepro-exe-shared-only",
       before: `  foreach(flag_var CMAKE_SHARED_LINKER_FLAGS CMAKE_STATIC_LINKER_FLAGS
@@ -795,21 +795,18 @@ export function runPatch(options: { ptSrc: string }): void {
     string(APPEND \${flag_var} " /Brepro")
   endforeach(flag_var)
 
+  if(MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    string(APPEND CMAKE_C_FLAGS " -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument -Wno-unknown-warning-option -Wno-unsafe-buffer-usage -Wno-declaration-after-statement -Wno-missing-prototypes -Wno-implicit-float-conversion -Wno-sign-conversion -Wno-cast-align -Wno-reserved-identifier -Wno-reserved-macro-identifier -Wno-disabled-macro-expansion -Wno-implicit-void-ptr-cast -Wno-double-promotion -Wno-shadow -Wno-unused-macros -Wno-jump-misses-init -Wno-padded -Wno-tentative-definition-compat -Wno-inconsistent-dllimport -Wno-deprecated-declarations -Wno-pass-failed -Wno-unused-parameter -Wno-used-but-marked-unused -Wno-float-equal -Wno-nonportable-system-include-path -Wno-strict-prototypes -Wno-implicit-int-conversion -Wno-implicit-int-enum-cast -Wno-unknown-attributes -Wno-covered-switch-default -Wno-shorten-64-to-32 -Wno-bad-function-cast -Wno-extra-semi-stmt -Wno-float-conversion -Wno-switch-default -Wno-c++-keyword -Wno-implicit-int-float-conversion -Wno-missing-variable-declarations -Wno-pedantic -Wno-switch-enum -Wno-cast-qual -Wno-overlength-strings -Wno-undef -Wno-missing-noreturn -Wno-redundant-parens -Wno-microsoft-unqualified-friend -Wno-pre-c11-compat -Wno-pointer-sign -Wno-global-constructors -Wno-unterminated-string-initialization -Wno-c++-unterminated-string-initialization -Wno-sign-compare -Wno-conditional-uninitialized -Wno-macro-redefined -Wno-format -Wno-implicit-const-int-float-conversion -Wno-cuda-compat -Wno-switch -Wno-unused-value -Wno-dll-attribute-on-redeclaration -Wno-format-nonliteral -Wno-exceptions -Wno-unused-result")
+    string(APPEND CMAKE_CXX_FLAGS " -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument -Wno-unknown-warning-option -Wno-unsafe-buffer-usage -Wno-declaration-after-statement -Wno-missing-prototypes -Wno-implicit-float-conversion -Wno-sign-conversion -Wno-cast-align -Wno-reserved-identifier -Wno-reserved-macro-identifier -Wno-disabled-macro-expansion -Wno-implicit-void-ptr-cast -Wno-double-promotion -Wno-shadow -Wno-unused-macros -Wno-jump-misses-init -Wno-padded -Wno-tentative-definition-compat -Wno-inconsistent-dllimport -Wno-deprecated-declarations -Wno-pass-failed -Wno-unused-parameter -Wno-used-but-marked-unused -Wno-float-equal -Wno-nonportable-system-include-path -Wno-strict-prototypes -Wno-implicit-int-conversion -Wno-implicit-int-enum-cast -Wno-unknown-attributes -Wno-covered-switch-default -Wno-shorten-64-to-32 -Wno-bad-function-cast -Wno-extra-semi-stmt -Wno-float-conversion -Wno-switch-default -Wno-c++-keyword -Wno-implicit-int-float-conversion -Wno-missing-variable-declarations -Wno-pedantic -Wno-switch-enum -Wno-cast-qual -Wno-overlength-strings -Wno-undef -Wno-missing-noreturn -Wno-redundant-parens -Wno-microsoft-unqualified-friend -Wno-pre-c11-compat -Wno-pointer-sign -Wno-global-constructors -Wno-unterminated-string-initialization -Wno-c++-unterminated-string-initialization -Wno-sign-compare -Wno-conditional-uninitialized -Wno-macro-redefined -Wno-format -Wno-implicit-const-int-float-conversion -Wno-cuda-compat -Wno-switch -Wno-unused-value -Wno-dll-attribute-on-redeclaration -Wno-format-nonliteral -Wno-exceptions -Wno-unused-result")
+  endif()
+
   foreach(flag_var CMAKE_SHARED_LINKER_FLAGS)`,
     },
   ]);
 
   // local：三处 ExternalProject（dlfcn-win32 / xz / aotriton_runtime）在缓存
   // 恢复后续编时不重新 configure，从而保住各子树的 .ninja_log，跳过 ~4110
-  // aotriton autotune 对象重编。
-  //
-  // 根因：cmake --build 每次会 re-run CMake；ExternalProject 的 update step
-  // 默认「只要 CMake re-run 就重跑」，重跑后 touch update stamp -> configure
-  // stamp 变旧 -> configure 重跑 -> 重写 build.ninja -> .ninja_log 作废 ->
-  // 全部重编。UPDATE_DISCONNECTED 跳过 update（Git 源 + 固定 GIT_TAG，本就
-  // 无需 update），configure 随即因源码 mtime(已 pin 为 epoch) 不新于 stamp
-  // 而跳过。同时向三个子树注入 CMAKE_SUPPRESS_REGENERATION，双保险压掉
-  // build 阶段内的 RERUN_CMAKE/VERIFY_GLOBS。
+  // aotriton autotune 对象重编。同时注入 clang-cl 警告抑制与 /utf-8 选项。
   applyPoints(path.join(root, "cmake/External/aotriton.cmake"), [
     // dlfcn-win32：CMAKE_ARGS（仅首次 configure 生效）+ UPDATE_DISCONNECTED
     {
@@ -829,6 +826,8 @@ export function runPatch(options: { ptSrc: string }): void {
       UPDATE_DISCONNECTED TRUE
       CMAKE_ARGS
         -DCMAKE_SUPPRESS_REGENERATION:BOOL=ON
+        "-DCMAKE_C_FLAGS=/utf-8 -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument"
+        "-DCMAKE_CXX_FLAGS=/utf-8 -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument"
         -DCMAKE_INSTALL_PREFIX=\${__DLFCN_WIN32_INSTALL_DIR}`,
     },
     // xz/liblzma：同上
@@ -849,6 +848,7 @@ export function runPatch(options: { ptSrc: string }): void {
       UPDATE_DISCONNECTED TRUE
       CMAKE_ARGS
         -DCMAKE_SUPPRESS_REGENERATION:BOOL=ON
+        "-DCMAKE_C_FLAGS=/utf-8 -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument -Wno-unsafe-buffer-usage -Wno-declaration-after-statement -Wno-disabled-macro-expansion -Wno-implicit-void-ptr-cast -Wno-reserved-macro-identifier -Wno-jump-misses-init -Wno-padded -Wno-reserved-identifier -Wno-used-but-marked-unused -Wno-nonportable-system-include-path -Wno-unused-parameter -Wno-implicit-int-conversion -Wno-implicit-int-enum-cast -Wno-deprecated-declarations -Wno-c++-unterminated-string-initialization -Wno-sign-compare -Wno-conditional-uninitialized"
         -DCMAKE_INSTALL_PREFIX=\${__XZ_INSTALL_DIR}`,
     },
     // aotriton_runtime：CMAKE_CACHE_ARGS + UPDATE_DISCONNECTED
@@ -860,35 +860,10 @@ export function runPatch(options: { ptSrc: string }): void {
       after: `      UPDATE_DISCONNECTED TRUE
       CMAKE_CACHE_ARGS
       -DCMAKE_SUPPRESS_REGENERATION:BOOL=ON
+      -DCMAKE_C_FLAGS:STRING=/utf-8 -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument
+      -DCMAKE_CXX_FLAGS:STRING=/utf-8 -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument
       -DAOTRITON_TARGET_ARCH:STRING=\${PYTORCH_ROCM_ARCH}
       -DCMAKE_INSTALL_PREFIX:FILEPATH=\${__AOTRITON_INSTALL_DIR}`,
-    },
-    // local：AOTriton 0.12b 在 clang-cl 下 -finput-charset 与 enum dllexport 产生大量警告
-    {
-      name: "aotriton-win-clang-cl-patch-command",
-      before: `    message(STATUS "PYTORCH_ROCM_ARCH \${PYTORCH_ROCM_ARCH}")
-
-    ExternalProject_Add(\${project}
-      GIT_REPOSITORY https://github.com/ROCm/aotriton.git
-      GIT_SUBMODULES_RECURSE \${RECURSIVE}
-      GIT_TAG \${__AOTRITON_CI_COMMIT}
-      PREFIX \${__AOTRITON_EXTERN_PREFIX}
-      CMAKE_CACHE_ARGS`,
-      after: `    message(STATUS "PYTORCH_ROCM_ARCH \${PYTORCH_ROCM_ARCH}")
-
-    if(WIN32)
-      set(__AOTRITON_WIN_PATCH PATCH_COMMAND \${Python3_EXECUTABLE} \${CMAKE_CURRENT_LIST_DIR}/patch-aotriton-windows.py)
-    else()
-      set(__AOTRITON_WIN_PATCH)
-    endif()
-
-    ExternalProject_Add(\${project}
-      GIT_REPOSITORY https://github.com/ROCm/aotriton.git
-      GIT_SUBMODULES_RECURSE \${RECURSIVE}
-      GIT_TAG \${__AOTRITON_CI_COMMIT}
-      PREFIX \${__AOTRITON_EXTERN_PREFIX}
-      \${__AOTRITON_WIN_PATCH}
-      CMAKE_CACHE_ARGS`,
     },
   ]);
 
@@ -960,12 +935,6 @@ std::tuple<`,
   // local：部署 Python 版 add_make_kernel_pt，替代上游 #143695 add_make_kernel_pt.sh
   copyFileSync(addMakeKernelPtSrc, addMakeKernelPtDst);
   console.log(`  OK ck-add-make-kernel-pt-py: copied to ${addMakeKernelPtDst}`);
-
-  const patchAotritonSrc = path.join(repoRoot, "build/patch-aotriton-windows.py");
-  const patchAotritonDst = path.join(root, "cmake/External/patch-aotriton-windows.py");
-  // local：AOTriton ExternalProject PATCH_COMMAND 入口（clang-cl 编译警告）
-  copyFileSync(patchAotritonSrc, patchAotritonDst);
-  console.log(`  OK aotriton-patch-windows-py: copied to ${patchAotritonDst}`);
 
   const ckCmake = path.join(ckDir, "CMakeLists.txt");
   applyPoints(ckCmake, buildCkCmakePoints(ckTargets, ckOptDim, disableBwd));
