@@ -374,9 +374,10 @@ export function runPatch(options: { ptSrc: string }): void {
       after:
         'cmake_dependent_option(USE_ROCM_CK_SDPA "Use ROCm Composable Kernel for SDPA" ON "USE_ROCM" OFF)',
     },
-    // local：可复现 wheel PE TimeDateStamp；/Brepro 仅作用于 shared/exe（llvm-lib 静态库不接受）；Windows clang-cl 诊断警告抑制
+    // local：可复现 wheel——编译器 /Brepro 固定 .obj COFF TimeDateStamp；链接器 /Brepro 固定 PE
+    // TimeDateStamp（仅 shared/exe；llvm-lib 静态链接器不接受 /Brepro）；Windows clang-cl 诊断警告抑制
     {
-      name: "msvc-link-brepro-exe-shared-only",
+      name: "msvc-brepro-compile-and-link",
       before: `  foreach(flag_var CMAKE_SHARED_LINKER_FLAGS CMAKE_STATIC_LINKER_FLAGS
                    CMAKE_EXE_LINKER_FLAGS CMAKE_MODULE_LINKER_FLAGS)
     string(APPEND \${flag_var} " /ignore:4049 /ignore:4217 /ignore:4099")
@@ -389,6 +390,10 @@ export function runPatch(options: { ptSrc: string }): void {
   endforeach(flag_var)
 
   foreach(flag_var CMAKE_SHARED_LINKER_FLAGS CMAKE_EXE_LINKER_FLAGS)
+    string(APPEND \${flag_var} " /Brepro")
+  endforeach(flag_var)
+
+  foreach(flag_var CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
     string(APPEND \${flag_var} " /Brepro")
   endforeach(flag_var)
 
@@ -423,8 +428,10 @@ export function runPatch(options: { ptSrc: string }): void {
       UPDATE_DISCONNECTED TRUE
       CMAKE_ARGS
         -DCMAKE_SUPPRESS_REGENERATION:BOOL=ON
-        "-DCMAKE_C_FLAGS=/utf-8 -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument"
-        "-DCMAKE_CXX_FLAGS=/utf-8 -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument"
+        "-DCMAKE_C_FLAGS=/utf-8 /Brepro -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument"
+        "-DCMAKE_CXX_FLAGS=/utf-8 /Brepro -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument"
+        -DCMAKE_SHARED_LINKER_FLAGS=/Brepro
+        -DCMAKE_EXE_LINKER_FLAGS=/Brepro
         -DCMAKE_INSTALL_PREFIX=\${__DLFCN_WIN32_INSTALL_DIR}`,
     },
     // xz/liblzma：同上
@@ -445,7 +452,7 @@ export function runPatch(options: { ptSrc: string }): void {
       UPDATE_DISCONNECTED TRUE
       CMAKE_ARGS
         -DCMAKE_SUPPRESS_REGENERATION:BOOL=ON
-        "-DCMAKE_C_FLAGS=/utf-8 -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument -Wno-unsafe-buffer-usage -Wno-declaration-after-statement -Wno-disabled-macro-expansion -Wno-implicit-void-ptr-cast -Wno-reserved-macro-identifier -Wno-jump-misses-init -Wno-padded -Wno-reserved-identifier -Wno-used-but-marked-unused -Wno-nonportable-system-include-path -Wno-unused-parameter -Wno-implicit-int-conversion -Wno-implicit-int-enum-cast -Wno-deprecated-declarations -Wno-c++-unterminated-string-initialization -Wno-sign-compare -Wno-conditional-uninitialized"
+        "-DCMAKE_C_FLAGS=/utf-8 /Brepro -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument -Wno-unsafe-buffer-usage -Wno-declaration-after-statement -Wno-disabled-macro-expansion -Wno-implicit-void-ptr-cast -Wno-reserved-macro-identifier -Wno-jump-misses-init -Wno-padded -Wno-reserved-identifier -Wno-used-but-marked-unused -Wno-nonportable-system-include-path -Wno-unused-parameter -Wno-implicit-int-conversion -Wno-implicit-int-enum-cast -Wno-deprecated-declarations -Wno-c++-unterminated-string-initialization -Wno-sign-compare -Wno-conditional-uninitialized"
         -DCMAKE_INSTALL_PREFIX=\${__XZ_INSTALL_DIR}`,
     },
     // aotriton_runtime：CMAKE_CACHE_ARGS + UPDATE_DISCONNECTED
@@ -457,8 +464,10 @@ export function runPatch(options: { ptSrc: string }): void {
       after: `      UPDATE_DISCONNECTED TRUE
       CMAKE_CACHE_ARGS
       -DCMAKE_SUPPRESS_REGENERATION:BOOL=ON
-      -DCMAKE_C_FLAGS:STRING=/utf-8 -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument
-      -DCMAKE_CXX_FLAGS:STRING=/utf-8 -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument
+      -DCMAKE_C_FLAGS:STRING=/utf-8 /Brepro -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument
+      -DCMAKE_CXX_FLAGS:STRING=/utf-8 /Brepro -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument
+      -DCMAKE_SHARED_LINKER_FLAGS:STRING=/Brepro
+      -DCMAKE_EXE_LINKER_FLAGS:STRING=/Brepro
       -DAOTRITON_TARGET_ARCH:STRING=\${PYTORCH_ROCM_ARCH}
       -DCMAKE_INSTALL_PREFIX:FILEPATH=\${__AOTRITON_INSTALL_DIR}`,
     },
