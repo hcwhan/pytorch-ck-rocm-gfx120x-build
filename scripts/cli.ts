@@ -101,7 +101,7 @@ program
 program
   .command("09-retry")
   .description(
-    "看门狗中断后 dispatch retry workflow（A04 save 完成后由 workflow 条件触发）",
+    "看门狗中断后 dispatch retry workflow（A01.1 save 完成后由 workflow 条件触发）",
   )
   .action(async () => {
     await runWatchdogRetry();

@@ -79,13 +79,13 @@
 | 输入 | 默认 | 说明 |
 |------|------|------|
 | `ninja_workers` | `4` | Ninja 并行 worker 数（OOM 时可改为 `2`） |
-| `use_cache` | `true` | 设为 `false` 时不 restore（仍 lookup 探测 `exists`；`used=false`；仅 compile 成功时 save） |
+| `use_cache` | `true` | `true` 时 restore；compile 非 skipped 即 save（含失败/看门狗；`ABORT_FORCE_KILLED` 除外）。`false` 时不 restore（仍 lookup 探测 `exists`；`used=false`）；仅 compile 成功时 save |
 | `publish_release` | `true` | 设为 `false` 时跳过 GitHub Release 上传 |
 | `retry_count` | `0` | 看门狗 auto-retry 内部递增；手动触发时保持默认，**勿改** |
 
 ### 看门狗与自动 retry
 
-GitHub-hosted runner 的 job 硬上限为 **6 小时**。compile 自 A00 bootstrap 第一步起算 **5 小时**看门狗：到期后 3× SIGINT 优雅中断 → save worktree + ccache → 自动 dispatch retry（`retry_count` 内部递增，默认 `0`，**≥8 放弃**；手动触发时无需填写）。
+GitHub-hosted runner 的 job 硬上限为 **6 小时**。compile 自 A00 bootstrap 第一步起算 **5 小时**看门狗：到期后 3× SIGINT 优雅中断 → save worktree + ccache → 自动 dispatch retry（`retry_count` 内部递增，默认 `0`，**≥8 放弃**；手动触发时保持默认，**勿改**）。
 
 | 条件 | 行为 |
 |------|------|
@@ -125,7 +125,7 @@ wheel / verify / publish 在 compile 未成功时不运行。`wheel.manifest.jso
 | CLI | setuptools step | 作用 |
 |-----|-----------------|------|
 | `08.build` | `build` | cache-hit：`ninja -C build install`；cache-miss：`setup.py build`（经 `build-pytorch-steps.py --step build`） |
-| `09-retry` | — | 看门狗中断后 dispatch retry workflow（A04 save 完成后；`if: always()` 条件触发；成功路径不执行） |
+| `09-retry` | — | 看门狗中断后 dispatch retry workflow（A01.1 save 完成后；`if: always()` 条件触发；成功路径不执行） |
 | `10.wheel` | `wheel` | `setup.py bdist_wheel`，复制唯一 `.whl` 到 `--dist-dir` |
 | `11.verify` | — | CPU wheel 冒烟（结构/CK 符号/SHA256/manifest + pip 安装 + `is_ck_sdpa_available()`） |
 | `12.publish` | — | 准备 GitHub Release 元数据（`publish_release=true` 时，经 A99） |
@@ -156,8 +156,6 @@ GitHub Release（构建成功后自动上传；`publish_release=true` 时；**pr
 | `build_caches[]` | worktree cache 元数据（`opt_dim` / `key` / `exists` / `used`） |
 | `ck_opt_dim`、`gpu_archs`、`ck_targets` | lock 编译配置快照 |
 | `size_bytes`、`sha256` | wheel 体积与校验 |
-
-> 旧版 manifest 可能在顶层含 `ck_disable_bwd: true`，或 cache key 为 `worktree-v2-*`；以当前 `11.verify` 输出为准。`dist/` 内本地样例可能来自较早 CI run。
 
 ```powershell
 gh release list

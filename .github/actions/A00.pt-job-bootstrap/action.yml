@@ -1,5 +1,5 @@
 name: PT job bootstrap
-description: Node 26/npm、01.config、A01 toolchain、02.toolchain-fingerprint、A02/A03 cache restore、06.verify-bootstrap、条件 prep/patch/hipify、07.pin-mtimes（需 job 级 actions/checkout 与 env PT_SRC/USE_CACHE）
+description: Node 26/npm、01.config、A00.1 toolchain、02.toolchain-fingerprint、A00.2/A00.3 cache restore、06.verify-bootstrap、条件 prep/patch/hipify、07.pin-mtimes（需 job 级 actions/checkout 与 env PT_SRC/USE_CACHE）
 
 outputs:
   worktree-cache-exists:
@@ -37,7 +37,7 @@ runs:
       run: npx tsx scripts/cli.ts 01.config -w $env:GITHUB_WORKSPACE --export-github-env
 
     - name: Setup ROCm toolchain
-      uses: "./.github/actions/A01.pt-rocm-toolchain"
+      uses: "./.github/actions/A00.pt-job-bootstrap/A00.1.pt-rocm-toolchain"
       with:
         python-version: ${{ env.PYTHON_VERSION }}
         rocm-index: ${{ env.ROCM_INDEX }}
@@ -52,11 +52,11 @@ runs:
 
     - name: Restore ccache
       id: ccache-cache
-      uses: "./.github/actions/A02.ccache-restore"
+      uses: "./.github/actions/A00.pt-job-bootstrap/A00.2.ccache-restore"
 
     - name: Restore worktree cache
       id: worktree-cache
-      uses: "./.github/actions/A03.worktree-cache-restore"
+      uses: "./.github/actions/A00.pt-job-bootstrap/A00.3.worktree-cache-restore"
       with:
         pt-src: ${{ env.PT_SRC }}
         use-cache: ${{ env.USE_CACHE }}

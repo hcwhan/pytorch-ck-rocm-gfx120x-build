@@ -19,16 +19,16 @@
 | lock CK codegen 目标 | `CK_TARGETS` | 由 `compile.gpu_archs` 经 `gpu-archs.ts` 推导（如 `gfx1200;gfx1201` → `--targets gfx12`）；`04.patch` 只读 env |
 | lock CK OPT_DIM | `CK_OPT_DIM` | lock `compile.ck_opt_dim` 逗号列表；`04.patch` 只读 env |
 | Worktree cache key | `WORKTREE_CACHE_KEY` | `02.toolchain-fingerprint` → bootstrap restore / compile save / manifest `build_caches[].key` |
-| Worktree cache exists | `worktree-cache-exists` | A03 output / manifest `build_caches[].exists` |
+| Worktree cache exists | `worktree-cache-exists` | A00.3 output / manifest `build_caches[].exists` |
 | Worktree cache used | `worktree-cache-used` / `WORKTREE_CACHE_USED` | restore hit 且 `06.verify-bootstrap` 通过 → 跳过 prep/patch/hipify（manifest `used`） |
-| Ccache key | `CCACHE_CACHE_KEY` | `02.toolchain-fingerprint` → A02 restore / A06 save |
+| Ccache key | `CCACHE_CACHE_KEY` | `02.toolchain-fingerprint` → A00.2 restore / A01.1 save |
 | Compile cache metadata | `--build-caches` | workflow 写入 `dist/build-caches.json` → 11.verify → manifest `build_caches`（`opt_dim/key/exists/used`） |
 | wheel local tag | `WHEEL_LOCAL_VERSION` | lock `wheel.wheel_local_version` |
 | PT 相关 env | `PYTORCH_*` | repo / commit / force-build 等 |
 
 **缩写对照：** 仓库 `pytorch-ck-rocm-gfx120x-build`；worktree cache 前缀 `worktree-v3-…`；release tag / artifact 前缀见 lock `release_tag_prefix` / `wheel_artifact_name`（当前 `torch-ck-cp312-rocm7.14.0-gfx120x`）。
 
-**lock → GITHUB_ENV 映射：** `toolchain.python`→`PYTHON_VERSION`，`toolchain.rocm`→`ROCM_VERSION`，`toolchain.rocm_index`→`ROCM_INDEX`，`compile.gpu_archs`→`GPU_ARCHS`，`compile.gpu_archs`→`CK_TARGETS`（推导），`compile.ck_opt_dim`→`CK_OPT_DIM`，`pytorch.repo`→`PYTORCH_REPO`，`pytorch.build_commit`→`PYTORCH_BUILD_COMMIT`，`pytorch.build_commit_date`→`PYTORCH_BUILD_COMMIT_DATE`（另导出 `SOURCE_DATE_EPOCH`），`02.toolchain-fingerprint --export-github-env`→`WORKTREE_CACHE_KEY`+`CCACHE_CACHE_KEY`，`A00` bootstrap→`WORKTREE_CACHE_USED`，`wheel.wheel_local_version`→`WHEEL_LOCAL_VERSION`，`wheel.wheel_artifact_name`→`WHEEL_ARTIFACT_NAME`，`release.release_tag_prefix`→`RELEASE_TAG_PREFIX`，`release.release_title_prefix`→`RELEASE_TITLE_PREFIX`；`EXPECTED_WHEEL_PATTERN` / `PIP_TOOLCHAIN_CACHE_KEY` 由 `version-lock.ts` 推导；`A01` 设 `CCACHE_DIR`。
+**lock → GITHUB_ENV 映射：** `toolchain.python`→`PYTHON_VERSION`，`toolchain.rocm`→`ROCM_VERSION`，`toolchain.rocm_index`→`ROCM_INDEX`，`compile.gpu_archs`→`GPU_ARCHS`，`compile.gpu_archs`→`CK_TARGETS`（推导），`compile.ck_opt_dim`→`CK_OPT_DIM`，`pytorch.repo`→`PYTORCH_REPO`，`pytorch.build_commit`→`PYTORCH_BUILD_COMMIT`，`pytorch.build_commit_date`→`PYTORCH_BUILD_COMMIT_DATE`（另导出 `SOURCE_DATE_EPOCH`），`02.toolchain-fingerprint --export-github-env`→`WORKTREE_CACHE_KEY`+`CCACHE_CACHE_KEY`，`A00` bootstrap→`WORKTREE_CACHE_USED`，`wheel.wheel_local_version`→`WHEEL_LOCAL_VERSION`，`wheel.wheel_artifact_name`→`WHEEL_ARTIFACT_NAME`，`release.release_tag_prefix`→`RELEASE_TAG_PREFIX`，`release.release_title_prefix`→`RELEASE_TITLE_PREFIX`；`EXPECTED_WHEEL_PATTERN` / `PIP_TOOLCHAIN_CACHE_KEY` 由 `version-lock.ts` 推导；`A00.1` 设 `CCACHE_DIR`。
 
 ## 复用入口
 
@@ -60,21 +60,22 @@
 | `build/add-make-kernel-pt.py` | CK FMHA blob `make_kernel`→`make_kernel_pt`（`04.patch` 复制到 PT 源码 `ck/`） |
 | `test/gpu-smoke-test.py` | 部署前 GPU 校验（gfx120x 真机；CK SDPA fwd/bwd；CI 不跑） |
 
-规则：lock 只经 `01.config` 读一次；同 job 其余命令只经 `requireLockEnv` 消费 env；`GPU_ARCHS` / `CK_TARGETS` / `CK_OPT_DIM` **禁止**在 patch 内硬编码。ROCm 路径只经 `rocm-sdk-paths.ts`；编译/打 wheel 只经 `build-pytorch-steps.py`。**A01 不安装预编译 torch**（全量源码编译）。
+规则：lock 只经 `01.config` 读一次；同 job 其余命令只经 `requireLockEnv` 消费 env；`GPU_ARCHS` / `CK_TARGETS` / `CK_OPT_DIM` **禁止**在 patch 内硬编码。ROCm 路径只经 `rocm-sdk-paths.ts`；编译/打 wheel 只经 `build-pytorch-steps.py`。**A00.1 不安装预编译 torch**（全量源码编译）。
 
 **依赖方向（强制）**：workflow 直接调用 `scripts/cli.ts` 与官方 action；`scripts/commands/*` 只 import `scripts/lib/*`。Python 编译逻辑只经 `build/build-pytorch-steps.py`。
 
 **Composite**
 
+**Composite 编号**：`Axx` = workflow 直接 `uses`；`Axx.y` = 仅父 composite 内部调用（勿从 workflow 引用）。
+
 | Action | 用途 |
 |--------|------|
-| `A00.pt-job-bootstrap` | Node 26/npm + `01.config` + A01 toolchain + `02.toolchain-fingerprint` + A02/A03 cache restore + `06.verify-bootstrap` + 条件 prep/patch/hipify + `07.pin-mtimes`（需 job 级 checkout；依赖 env `PT_SRC`/`USE_CACHE`） |
-| `A01.pt-rocm-toolchain` | Python / MSVC / rocm[devel] / ccache / pip toolchain cache / rocm-sdk-libraries + device wheels / `rocm_sdk init`（需 env `GPU_ARCHS`） |
-| `A02.ccache-restore` | 恢复 `%RUNNER_TEMP%/ccache`（`CCACHE_CACHE_KEY`） |
-| `A03.worktree-cache-restore` | 恢复整棵 PT 工作树（`WORKTREE_CACHE_KEY` 精确匹配） |
-| `A04.pt-build-with-cache` | 编译 + save worktree + ccache |
-| `A05.worktree-cache-save` | 保存整棵 PT 工作树（patch+hipify+build/） |
-| `A06.ccache-save` | 保存 ccache 目录 |
+| `A00.pt-job-bootstrap` | Node 26/npm + `01.config` + A00.1 + `02.toolchain-fingerprint` + A00.2/A00.3 restore + `06.verify-bootstrap` + 条件 prep/patch/hipify + `07.pin-mtimes`（需 job 级 checkout；依赖 env `PT_SRC`/`USE_CACHE`） |
+| `A00.1.pt-rocm-toolchain` | Python / MSVC / rocm[devel] / ccache / pip toolchain cache / rocm-sdk-libraries + device wheels / `rocm_sdk init`（仅 A00 调用；需 env `GPU_ARCHS`） |
+| `A00.2.ccache-restore` | 恢复 `%RUNNER_TEMP%/ccache`（`CCACHE_CACHE_KEY`） |
+| `A00.3.worktree-cache-restore` | 恢复整棵 PT 工作树（`WORKTREE_CACHE_KEY` 精确匹配） |
+| `A01.pt-build-with-cache` | `08.build` + 调用 A01.1 post-build cache save |
+| `A01.1.pt-post-build-caches` | delete/save worktree + ccache + 180s 传播等待 |
 | `A99.pt-verify-publish` | `11.verify` + artifact + 可选 Release |
 
 ## 设计决策
@@ -92,7 +93,7 @@
 - **worktree hit bootstrap**：`06.verify-bootstrap` 通过则 skip prep/patch/hipify；verify 失败 fallback miss
 - **compile**：cache-hit 时 `ninja -C build install`（跳过 CMake reconfigure，保 `.ninja_log`）；cache-miss 时 `setup.py build`
 - **ccache**：`CMAKE_*_COMPILER_LAUNCHER=ccache`；GHA cache `ccache-v3-lock[…]-patch[…]-msvc[…]-rocmClang[…]-ninja[…]-cmake[…]`（无 `lockWheel`）
-- **看门狗 5h 优雅中断**：A00 第一步写 `JOB_START_TIME`；`watchdog.ts` 单次 deadline 到期后写 `ABORT_TRIGGERED`/`COMPILE_COMPLETE=false`，3× SIGINT（1min 间隔；失败则 `ABORT_FORCE_KILLED` + taskkill，**不 save/retry**）；A04 save 后 `09-retry` 在 `use_cache=true && retry_count<8 && !ABORT_FORCE_KILLED` 时 dispatch retry（3 次重试）并等 300s；wheel 等下游 `if: success()`（详见 `docs/watchdog-design.md`）
+- **看门狗 5h 优雅中断**：A00 第一步写 `JOB_START_TIME`；`watchdog.ts` 单次 deadline 到期后写 `ABORT_TRIGGERED`/`COMPILE_COMPLETE=false`，3× SIGINT（1min 间隔；失败则 `ABORT_FORCE_KILLED` + taskkill，**不 save/retry**）；A01.1 save 后 `09-retry` 在 `use_cache=true && retry_count<8 && !ABORT_FORCE_KILLED` 时 dispatch retry（3 次重试）并等 300s；wheel 等下游 `if: success()`（详见 `docs/watchdog-design.md`）
 
 ## 缓存复用
 
@@ -119,9 +120,9 @@ worktree cache 恢复后，ninja 必须同时通过 **3 条 dirty 检查**才跳
 | `develRoot/lib` | `_rocm_sdk_devel` | ROCm devel 链接库 |
 | `libuv_ROOT/include`、`libuv_ROOT/lib` | libuv（env 已设时） | libuv 头文件与库 |
 
-**cache key 前缀统一定义**：`WORKTREE_CACHE_PREFIX`（`worktree-v3`）和 `CCACHE_CACHE_PREFIX`（`ccache-v3`）在 `worktree-cache-key.ts` / `ccache-cache-key.ts` 导出，经 `02.toolchain-fingerprint` 写入 `GITHUB_ENV`，A04 delete step 用 `$env:*_CACHE_PREFIX-*` 做通配匹配。
+**cache key 前缀统一定义**：`WORKTREE_CACHE_PREFIX`（`worktree-v3`）和 `CCACHE_CACHE_PREFIX`（`ccache-v3`）在 `worktree-cache-key.ts` / `ccache-cache-key.ts` 导出，经 `02.toolchain-fingerprint` 写入 `GITHUB_ENV`，A01.1 delete step 用 `$env:*_CACHE_PREFIX-*` 做通配匹配。
 
-**cache save 前的清理**：A04 在 save 前删除所有同类前缀缓存（不只删同名 key），确保旧 patch 的缓存不积累，总量不超过 10GB 限制（1 worktree ~2.45GB + 1 ccache ~2GB + 1 pip ~2.25GB ≈ 6.7GB）。
+**cache save 前的清理**：A01.1 在 save 前删除所有同类前缀缓存（不只删同名 key），确保旧 patch 的缓存不积累，总量不超过 10GB 限制（1 worktree ~2.45GB + 1 ccache ~2GB + 1 pip ~2.25GB ≈ 6.7GB）。
 
 ## 编写规范
 

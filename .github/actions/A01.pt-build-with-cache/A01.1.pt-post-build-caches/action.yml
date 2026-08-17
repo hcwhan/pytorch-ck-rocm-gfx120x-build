@@ -1,39 +1,15 @@
-name: PT build with worktree cache
-description: 运行编译 CLI，并在结束后保存 worktree + ccache（use_cache=true 时 compile 非 skipped 即 save；false 时仅成功 save）
+name: PT post-build cache save
+description: compile 后统一执行 worktree/ccache 清理、保存与传播等待（由调用方 gate 执行条件）
 
 inputs:
   pt-src:
     description: PyTorch 源码根目录
     required: true
-  cache-key:
-    description: WORKTREE_CACHE_KEY
-    required: true
-  cache-exists:
-    description: bootstrap restore 时远程 worktree cache 是否存在
-    required: false
-    default: "false"
-  ccache-cache-exists:
-    description: bootstrap restore 时远程 ccache 是否存在
-    required: false
-    default: "false"
-  use-cache:
-    description: true 时在 build 后 save worktree + ccache（非 skipped 即 save）；false 时仅成功时 save
-    required: false
-    default: "true"
-  run:
-    description: 编译 CLI 命令（如 npx tsx scripts/cli.ts 08.build --pt-src …）
-    required: true
 
 runs:
   using: composite
   steps:
-    - name: Run build CLI step
-      id: run-build
-      shell: pwsh
-      run: ${{ inputs.run }}
-
     - name: Delete all stale worktree caches
-      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && inputs.cache-key != '' && env.ABORT_FORCE_KILLED != 'true'
       shell: pwsh
       env:
         GH_TOKEN: ${{ github.token }}
@@ -55,15 +31,12 @@ runs:
         Write-Host "Deleted $deleted stale worktree cache entries"
 
     - name: Save worktree cache
-      id: save-worktree-cache
-      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && inputs.cache-key != '' && env.ABORT_FORCE_KILLED != 'true'
-      uses: "./.github/actions/A05.worktree-cache-save"
+      uses: actions/cache/save@v6
       with:
-        pt-src: ${{ inputs.pt-src }}
-        cache-key: ${{ inputs.cache-key }}
+        path: ${{ inputs.pt-src }}
+        key: ${{ env.WORKTREE_CACHE_KEY }}
 
     - name: Delete all stale ccache entries
-      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && env.CCACHE_CACHE_KEY != '' && env.ABORT_FORCE_KILLED != 'true'
       shell: pwsh
       env:
         GH_TOKEN: ${{ github.token }}
@@ -85,5 +58,13 @@ runs:
         Write-Host "Deleted $deleted stale ccache entries"
 
     - name: Save ccache
-      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && env.CCACHE_CACHE_KEY != '' && env.ABORT_FORCE_KILLED != 'true'
-      uses: "./.github/actions/A06.ccache-save"
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ runner.temp }}/ccache
+        key: ${{ env.CCACHE_CACHE_KEY }}
+
+    - name: Wait for GitHub Actions cache propagation
+      shell: pwsh
+      run: |
+        Write-Host "Waiting 180s after worktree + ccache save for GitHub cache API propagation..."
+        Start-Sleep -Seconds 180

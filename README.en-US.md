@@ -79,13 +79,13 @@ Push to `main` does **not** auto-trigger builds.
 | Input | Default | Description |
 |-------|---------|-------------|
 | `ninja_workers` | `4` | Ninja parallel workers (use `2` if OOM) |
-| `use_cache` | `true` | Set `false` to skip restore (still probes `exists`; `used=false`; save only after a successful compile) |
+| `use_cache` | `true` | When `true`, restore worktree; save after compile when not skipped (includes failure/watchdog abort; except `ABORT_FORCE_KILLED`). When `false`, skip restore (still probes `exists`; `used=false`); save only after a successful compile |
 | `publish_release` | `true` | Set `false` to skip GitHub Release upload |
-| `retry_count` | `0` | Auto-incremented by watchdog retry; keep default when triggering manually |
+| `retry_count` | `0` | Auto-incremented by watchdog retry; keep the default when triggering manually; **do not change** |
 
 ### Watchdog and auto-retry
 
-GitHub-hosted runner jobs have a **6-hour** hard limit. Compile uses a **5-hour** watchdog from A00 bootstrap step one: on expiry, 3× SIGINT graceful abort → save worktree + ccache → auto dispatch retry (`retry_count` increments internally, default `0`, **give up at ≥8**; no need to set when triggering manually).
+GitHub-hosted runner jobs have a **6-hour** hard limit. Compile uses a **5-hour** watchdog from A00 bootstrap step one: on expiry, 3× SIGINT graceful abort → save worktree + ccache → auto dispatch retry (`retry_count` increments internally, default `0`, **give up at ≥8**; **do not change** when triggering manually).
 
 | Condition | Behavior |
 |-----------|----------|
@@ -125,7 +125,7 @@ After bootstrap (`01.config`–`07.pin-mtimes`, via A00), the serial workflow ru
 | CLI | setuptools step | Role |
 |-----|-----------------|------|
 | `08.build` | `build` | cache-hit: `ninja -C build install`; cache-miss: `setup.py build` (via `build-pytorch-steps.py --step build`) |
-| `09-retry` | — | Dispatch retry workflow after watchdog abort (after A04 save; `if: always()` guard; skipped on success path) |
+| `09-retry` | — | Dispatch retry workflow after watchdog abort (after A01.1 save; `if: always()` guard; skipped on success path) |
 | `10.wheel` | `wheel` | `setup.py bdist_wheel`, copies the single `.whl` to `--dist-dir` |
 | `11.verify` | — | CPU wheel smoke test (structure/CK symbols/SHA256/manifest + pip install + `is_ck_sdpa_available()`) |
 | `12.publish` | — | Prepare GitHub Release metadata (`publish_release=true`, via A99) |
@@ -161,8 +161,6 @@ gh release download torch-ck-cp312-rocm7.14.0-gfx120x-serial-build123 -D .\dist
 | `build_caches[]` | worktree cache metadata (`opt_dim` / `key` / `exists` / `used`) |
 | `ck_opt_dim`, `gpu_archs`, `ck_targets` | lock compile config snapshot |
 | `size_bytes`, `sha256` | wheel size and checksum |
-
-> Legacy manifests may include top-level `ck_disable_bwd: true` or `worktree-v2-*` cache keys; trust current `11.verify` output. Local samples under `dist/` may be from older CI runs.
 
 Expected wheel name (derived from `wheel.wheel_local_version` + `toolchain.python`; PEP 440 normalizes `-` to `.` in the local tag):
 

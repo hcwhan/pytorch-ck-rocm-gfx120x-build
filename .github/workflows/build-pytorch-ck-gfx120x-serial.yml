@@ -9,7 +9,7 @@ on:
         required: false
         default: "4"
       use_cache:
-        description: "true 时 restore worktree（含 build/）；false 时不 restore（仍 lookup 探测 exists；used=false）；save 仅 compile 成功时；ccache 同规则"
+        description: "true：restore worktree（含 build/）；compile 非 skipped 即 save worktree+ccache（含失败/看门狗；ABORT_FORCE_KILLED 除外）。false：不 restore（仍 lookup 探测 exists；used=false）；仅 compile 成功时 save；ccache 同规则"
         type: boolean
         required: false
         default: true
@@ -54,12 +54,9 @@ jobs:
         uses: "./.github/actions/A00.pt-job-bootstrap"
 
       - name: Compile PyTorch and save worktree + ccache
-        uses: "./.github/actions/A04.pt-build-with-cache"
+        uses: "./.github/actions/A01.pt-build-with-cache"
         with:
           pt-src: ${{ env.PT_SRC }}
-          cache-key: ${{ env.WORKTREE_CACHE_KEY }}
-          cache-exists: ${{ steps.bootstrap.outputs.worktree-cache-exists }}
-          ccache-cache-exists: ${{ steps.bootstrap.outputs.ccache-cache-exists }}
           use-cache: ${{ env.USE_CACHE }}
           run: npx tsx scripts/cli.ts 08.build --pt-src $env:PT_SRC
 

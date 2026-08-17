@@ -1,0 +1,28 @@
+name: PT build with worktree cache
+description: 运行编译 CLI，并在结束后保存 worktree + ccache（use_cache=true 时 compile 非 skipped 即 save；false 时仅成功 save）
+
+inputs:
+  pt-src:
+    description: PyTorch 源码根目录
+    required: true
+  use-cache:
+    description: true 时在 build 后 save worktree + ccache（非 skipped 即 save）；false 时仅成功时 save
+    required: false
+    default: "true"
+  run:
+    description: 编译 CLI 命令（如 npx tsx scripts/cli.ts 08.build --pt-src …）
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Run build CLI step
+      id: run-build
+      shell: pwsh
+      run: ${{ inputs.run }}
+
+    - name: Post-build cache save
+      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && env.ABORT_FORCE_KILLED != 'true'
+      uses: "./.github/actions/A01.pt-build-with-cache/A01.1.pt-post-build-caches"
+      with:
+        pt-src: ${{ inputs.pt-src }}
