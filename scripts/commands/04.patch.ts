@@ -467,8 +467,8 @@ export function runPatch(options: { ptSrc: string }): void {
       after: `      UPDATE_DISCONNECTED TRUE
       CMAKE_CACHE_ARGS
       -DCMAKE_SUPPRESS_REGENERATION:BOOL=ON
-      -DCMAKE_C_FLAGS:STRING=${clangExternalCFlags}
-      -DCMAKE_CXX_FLAGS:STRING=${clangExternalCFlags}
+      -DCMAKE_C_FLAGS:STRING="${clangExternalCFlags}"
+      -DCMAKE_CXX_FLAGS:STRING="${clangExternalCFlags}"
       -DCMAKE_SHARED_LINKER_FLAGS:STRING=/Brepro
       -DCMAKE_EXE_LINKER_FLAGS:STRING=/Brepro
       -DAOTRITON_TARGET_ARCH:STRING=\${PYTORCH_ROCM_ARCH}
