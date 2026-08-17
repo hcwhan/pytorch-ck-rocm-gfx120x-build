@@ -1,19 +1,14 @@
-import { appendFileSync, existsSync, statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { run, spawnAsync } from "../lib/exec.js";
+import { appendGithubEnv } from "../lib/github.js";
 import { initBuildEnv } from "../lib/init-build-env.js";
 import { requireMaxJobs } from "../lib/max-jobs.js";
 import { resolveBuildDir } from "../lib/paths.js";
 import { createWatchdog } from "../lib/watchdog.js";
 
 const PYTHON = "python";
-
-function appendGithubEnv(key: string, value: string): void {
-  if (process.env.GITHUB_ENV) {
-    appendFileSync(process.env.GITHUB_ENV, `${key}=${value}\n`, "utf8");
-  }
-}
 
 /**
  * Run `ninja -d explain -n` and log dirty reasons.
@@ -130,7 +125,7 @@ export async function runBuild(options: { ptSrc: string }): Promise<void> {
   }
 
   if (exitCode === 0) {
-    appendGithubEnv("COMPILE_COMPLETE", "true");
+    appendGithubEnv({ COMPILE_COMPLETE: "true" });
     if (process.env.CCACHE_DIR?.trim()) {
       run("ccache", ["--show-stats"]);
     }

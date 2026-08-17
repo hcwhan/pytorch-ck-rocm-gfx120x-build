@@ -1,5 +1,5 @@
-import { appendFileSync } from "node:fs";
 import { spawnSync, type ChildProcess } from "node:child_process";
+import { appendGithubEnv } from "./github.js";
 
 const WATCHDOG_LIMIT_MS = 5 * 60 * 60 * 1000;
 const ABORT_RETRY_INTERVAL_MS = 60_000;
@@ -7,12 +7,6 @@ const MAX_ABORT_ATTEMPTS = 3;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function appendGithubEnv(key: string, value: string): void {
-  if (process.env.GITHUB_ENV) {
-    appendFileSync(process.env.GITHUB_ENV, `${key}=${value}\n`, "utf8");
-  }
 }
 
 function isChildRunning(child: ChildProcess): boolean {
@@ -105,9 +99,7 @@ export function createWatchdog(
             `Watchdog: SIGINT attempt ${attempt}/${MAX_ABORT_ATTEMPTS} failed`,
           );
         }
-        if (attempt < MAX_ABORT_ATTEMPTS) {
-          await sleep(ABORT_RETRY_INTERVAL_MS);
-        }
+        await sleep(ABORT_RETRY_INTERVAL_MS);
       }
       if (!isChildRunning(child)) {
         return;
@@ -116,7 +108,7 @@ export function createWatchdog(
         `Watchdog: ${MAX_ABORT_ATTEMPTS} abort attempts exhausted, force killing pid=${child.pid}`,
       );
       forceKilled = true;
-      appendGithubEnv("ABORT_FORCE_KILLED", "true");
+      appendGithubEnv({ ABORT_FORCE_KILLED: "true" });
       if (!forceKillProcessTree(child.pid)) {
         console.warn(
           `Watchdog: force kill may have failed; child may still be running (pid=${child.pid})`,
@@ -133,8 +125,10 @@ export function createWatchdog(
       return;
     }
     aborted = true;
-    appendGithubEnv("ABORT_TRIGGERED", "true");
-    appendGithubEnv("COMPILE_COMPLETE", "false");
+    appendGithubEnv({
+      ABORT_TRIGGERED: "true",
+      COMPILE_COMPLETE: "false",
+    });
     console.log(
       `Watchdog: job elapsed ${Date.now() - jobStartMs}ms >= ${WATCHDOG_LIMIT_MS}ms, beginning graceful abort`,
     );

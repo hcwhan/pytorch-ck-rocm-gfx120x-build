@@ -11,20 +11,12 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`${name} env must be set`);
-  }
-  return value;
-}
-
 function dispatchRetryWorkflow(nextRetryCount: number): boolean {
   const repo = requireGithubActionsEnv("GITHUB_REPOSITORY");
   const ref = requireGithubActionsEnv("GITHUB_REF_NAME");
-  const maxJobs = requireEnv("MAX_JOBS").trim();
-  const useCache = requireEnv("USE_CACHE") === "true";
-  const publishRelease = requireEnv("PUBLISH_RELEASE") === "true";
+  const maxJobs = requireGithubActionsEnv("MAX_JOBS").trim();
+  const useCache = requireGithubActionsEnv("USE_CACHE") === "true";
+  const publishRelease = requireGithubActionsEnv("PUBLISH_RELEASE") === "true";
 
   // gh -F coerces numeric-looking values to numbers; string workflow inputs need -f.
   const result = spawnSync(
@@ -59,17 +51,22 @@ function dispatchRetryWorkflow(nextRetryCount: number): boolean {
 }
 
 export async function runWatchdogRetry(): Promise<void> {
+  if (process.env.ABORT_TRIGGERED !== "true" || process.env.COMPILE_COMPLETE === "true") {
+    throw new Error(
+      "Watchdog retry requires ABORT_TRIGGERED=true and COMPILE_COMPLETE!=true",
+    );
+  }
   if (process.env.ABORT_FORCE_KILLED === "true") {
     throw new Error(
       "Watchdog force-killed (ABORT_FORCE_KILLED=true); cannot retry",
     );
   }
 
-  if (requireEnv("USE_CACHE") !== "true") {
+  if (requireGithubActionsEnv("USE_CACHE") !== "true") {
     throw new Error("Watchdog abort with use_cache=false; cannot retry");
   }
 
-  const retryCountRaw = requireEnv("RETRY_COUNT");
+  const retryCountRaw = requireGithubActionsEnv("RETRY_COUNT");
   const retryCount = Number.parseInt(retryCountRaw, 10);
   if (!Number.isFinite(retryCount)) {
     throw new Error(`Invalid RETRY_COUNT: ${retryCountRaw}`);
