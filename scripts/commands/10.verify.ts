@@ -32,6 +32,7 @@ ck_disable_bwd = sys.argv[4]
 min_pyd_bytes = 512 * 1024
 min_core_dll_bytes = 512 * 1024
 min_aotriton_dll_bytes = 64 * 1024
+min_libomp_dll_bytes = 256 * 1024
 min_ck_binary_bytes = 64 * 1024
 min_aotriton_aks2_count = 10
 
@@ -76,12 +77,18 @@ with zipfile.ZipFile(wheel) as zf:
             'torch/lib/torch_python.dll',
             'torch/lib/torch_hip.dll',
             'torch/lib/aotriton_v2.dll',
+            'torch/lib/libomp140.x86_64.dll',
         ]
         for dll in required_dlls:
             if dll not in names:
                 raise SystemExit(f'ERROR: required Windows wheel binary missing: {dll}')
             info = zf.getinfo(dll)
-            min_bytes = min_aotriton_dll_bytes if dll.endswith('aotriton_v2.dll') else min_core_dll_bytes
+            if dll.endswith('aotriton_v2.dll'):
+                min_bytes = min_aotriton_dll_bytes
+            elif dll.endswith('libomp140.x86_64.dll'):
+                min_bytes = min_libomp_dll_bytes
+            else:
+                min_bytes = min_core_dll_bytes
             if info.file_size < min_bytes:
                 raise SystemExit(f'ERROR: {dll} too small ({info.file_size} bytes)')
             print(f'OK {dll} size={info.file_size}')

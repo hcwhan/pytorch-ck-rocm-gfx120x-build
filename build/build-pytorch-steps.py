@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 _SETUP_SKIP_BUILD_DEPS_MARKER = "PYTORCH_CK_SKIP_BUILD_DEPS"
+_LIBOMP_DLL = "libomp140.x86_64.dll"
 _SETUP_SKIP_BUILD_DEPS_BEFORE = (
     "RUN_BUILD_DEPS = True\n"
     "# see if the user passed a quiet flag to setup.py arguments and respect"
@@ -36,6 +37,63 @@ def _ensure_setup_skip_build_deps_patch(pt_src: Path) -> None:
         encoding="utf-8",
     )
     print(f"Patched setup.py for {_SETUP_SKIP_BUILD_DEPS_MARKER}", flush=True)
+
+
+def _rank_libomp_candidate(path: Path) -> tuple[int, str]:
+    """Prefer release OpenMP redist over debug_nonredist (TheRock #1520)."""
+    lowered = str(path).lower()
+    rank = 0
+    if "debug" in lowered:
+        rank += 10
+    if "nonredist" in lowered:
+        rank += 5
+    return (rank, lowered)
+
+
+def _find_libomp_dll() -> Path:
+    if os.name != "nt":
+        raise SystemExit(f"ERROR: {_LIBOMP_DLL} bundling is Windows-only")
+
+    candidates: list[Path] = []
+    vc_redist = os.environ.get("VCToolsRedistDir", "").strip()
+    if vc_redist:
+        root = Path(vc_redist)
+        if root.is_dir():
+            candidates.extend(p for p in root.rglob(_LIBOMP_DLL) if p.is_file())
+
+    for root in (
+        Path(r"C:\Program Files\Microsoft Visual Studio"),
+        Path(r"C:\Program Files (x86)\Microsoft Visual Studio"),
+    ):
+        if root.is_dir():
+            candidates.extend(p for p in root.rglob(_LIBOMP_DLL) if p.is_file())
+
+    if not candidates:
+        raise SystemExit(
+            f"ERROR: {_LIBOMP_DLL} not found "
+            "(MSVC OpenMP runtime; expect VCToolsRedistDir on CI)"
+        )
+
+    candidates.sort(key=_rank_libomp_candidate)
+    return candidates[0]
+
+
+def _ensure_libomp_in_torch_lib(pt_src: Path) -> None:
+    """torch_cpu.dll 链接 libomp140；ROCm Windows 构建不会自动 install 该 DLL。"""
+    if os.name != "nt":
+        return
+
+    dst_dir = pt_src / "torch" / "lib"
+    dst = dst_dir / _LIBOMP_DLL
+    src = _find_libomp_dll()
+    dst_dir.mkdir(parents=True, exist_ok=True)
+
+    if dst.exists() and dst.stat().st_size == src.stat().st_size:
+        print(f"libomp already in torch/lib: {dst}", flush=True)
+        return
+
+    dst.write_bytes(src.read_bytes())
+    print(f"Copied {_LIBOMP_DLL}: {src} -> {dst}", flush=True)
 
 
 def _wheel_subprocess_env() -> dict[str, str]:
@@ -76,6 +134,7 @@ def build_wheel(pt_src: Path, *, verbose: bool = False) -> None:
     # 运行时 patch setup.py 使 PYTORCH_CK_SKIP_BUILD_DEPS=1 时跳过 build_deps；
     # build 仅同步 torch/ -> build/lib；bdist_wheel --skip-build 只打包。
     _ensure_setup_skip_build_deps_patch(pt_src)
+    _ensure_libomp_in_torch_lib(pt_src)
 
     wheel_env = _wheel_subprocess_env()
 
