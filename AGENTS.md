@@ -8,7 +8,7 @@
 |----------|------|
 | **serial** | worktree restore → bootstrap verify → `07.pin-mtimes`（含 ROCm 外部头文件） → cache-hit: `ninja -C` / cache-miss: `setup.py build` → save worktree + ccache → `bdist_wheel` → write `dist/build-caches.json` → CPU smoke test → optional Release |
 
-手动 `workflow_dispatch`（输入：`ninja_workers`→`MAX_JOBS`、`use_cache`、`publish_release`）；setuptools 同进程入口：`build/build-pytorch-steps.py`。Worktree cache：`worktree-v3-lock[{lockHash8}]-lockWheel[{lockWheelHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`（`lockHash8` = lock `toolchain`+`pytorch`+`compile`；`lockWheelHash8` = lock `wheel`；`patchHash8` = `scripts/commands/04.patch.ts`+`scripts/commands/05.hipify.ts`+`scripts/lib/gpu-archs.ts`+`build/add-make-kernel-pt.py`；`msvc`/`rocmClang` = 完整工具链版本号；`ninja`/`cmake` = major.minor；精确 key，无 `restore-keys`）。Ccache：`ccache-v3-lock[…]-patch[…]-msvc[…]-rocmClang[…]-ninja[…]-cmake[…]`（无 `lockWheel`）。Pip：`pt-pip-toolchain-v2-py[…]-rocm[…]-idx[…]`（`01.config`）。
+手动 `workflow_dispatch`（输入：`ninja_workers`→`MAX_JOBS`、`use_cache`、`publish_release`、`retry_count`→`RETRY_COUNT` 默认 `0` 由看门狗递增）；setuptools 同进程入口：`build/build-pytorch-steps.py`。Worktree cache：`worktree-v3-lock[{lockHash8}]-lockWheel[{lockWheelHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`（`lockHash8` = lock `toolchain`+`pytorch`+`compile`；`lockWheelHash8` = lock `wheel`；`patchHash8` = `scripts/commands/04.patch.ts`+`scripts/commands/05.hipify.ts`+`scripts/lib/gpu-archs.ts`+`build/add-make-kernel-pt.py`；`msvc`/`rocmClang` = 完整工具链版本号；`ninja`/`cmake` = major.minor；精确 key，无 `restore-keys`）。Ccache：`ccache-v3-lock[…]-patch[…]-msvc[…]-rocmClang[…]-ninja[…]-cmake[…]`（无 `lockWheel`）。Pip：`pt-pip-toolchain-v2-py[…]-rocm[…]-idx[…]`（`01.config`）。
 
 ## 命名约定
 
@@ -108,13 +108,16 @@ worktree cache 恢复后，ninja 必须同时通过 **3 条 dirty 检查**才跳
 
 `cmake --build` 会检查 CMake reconfigure（依赖 `build/` 内部状态文件 mtime）。`pin-mtimes` 跳过 `build/`，这些文件 mtime 被 tar 扰动，可能触发 reconfigure → 重新生成 `build.ninja` → command hash 全部变化 → mass recompile。`ninja -C` 完全绕过 CMake，直接按现有 `build.ninja` 编译。cache key 的 `patch[hash]` 段保证 patch 变了走 cache-miss 重新 configure。
 
-**pin 的外部目录**（经 `getRocmSdkPaths()` 获取路径）：
+**pin 的外部目录**（经 `getRocmSdkPaths()` 与可选 `libuv_ROOT`/`LIBUV_ROOT` 获取路径）：
 
-| 目录 | pip 包来源 | 包含的关键头文件 |
-|------|----------|-----------------|
-| `coreRoot/lib/llvm/lib/clang` | `_rocm_sdk_core` | `yvals_core.h`, `vadefs.h` |
-| `develRoot/lib/llvm/lib/clang` | `_rocm_sdk_devel` | `cuda_wrappers/new` |
+| 目录 | pip 包来源 | 作用 |
+|------|----------|------|
+| `coreRoot/lib/llvm/lib/clang` | `_rocm_sdk_core` | `yvals_core.h`, `vadefs.h` 等 |
+| `develRoot/lib/llvm/lib/clang` | `_rocm_sdk_devel` | `cuda_wrappers/new` 等 |
 | `develRoot/include` | `_rocm_sdk_devel` | `hip_runtime.h` 等 |
+| `coreRoot/lib` | `_rocm_sdk_core` | `amdhip64.lib` 等 import lib |
+| `develRoot/lib` | `_rocm_sdk_devel` | ROCm devel 链接库 |
+| `libuv_ROOT/include`、`libuv_ROOT/lib` | libuv（env 已设时） | libuv 头文件与库 |
 
 **cache key 前缀统一定义**：`WORKTREE_CACHE_PREFIX`（`worktree-v3`）和 `CCACHE_CACHE_PREFIX`（`ccache-v3`）在 `worktree-cache-key.ts` / `ccache-cache-key.ts` 导出，经 `02.toolchain-fingerprint` 写入 `GITHUB_ENV`，A04 delete step 用 `$env:*_CACHE_PREFIX-*` 做通配匹配。
 

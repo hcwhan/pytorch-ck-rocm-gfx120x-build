@@ -81,7 +81,7 @@ program
 program
   .command("07.pin-mtimes")
   .description(
-    "将 PT 工作树 mtime 固定为 VERSION.lock pytorch.build_commit_date（抑制 cache restore 后 cmake glob 重配）",
+    "将 PT 工作树 + ROCm SDK 外部路径 mtime 固定为 SOURCE_DATE_EPOCH（满足 ninja cache restore 后三条 dirty 检查）",
   )
   .requiredOption("--pt-src <path>")
   .action((opts) => {
@@ -91,7 +91,7 @@ program
 program
   .command("08.build")
   .description(
-    "编译 PyTorch（setup.py build；有效 cmake 构建树存在时上游可能 skip configure）",
+    "编译 PyTorch：cache-hit 时 ninja -C build install；cache-miss 时 setup.py build（经 build-pytorch-steps.py）",
   )
   .requiredOption("--pt-src <path>")
   .action(async (opts) => {

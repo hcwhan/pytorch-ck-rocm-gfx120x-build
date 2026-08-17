@@ -15,6 +15,7 @@ Toolchain versions are pinned in **`VERSION.lock.json`** and loaded via `npx tsx
 | Python | 3.12 |
 | PyTorch source | `VERSION.lock.json` **`pytorch.build_commit`** (currently `v2.13.0`) |
 | ROCm | `7.14.0` (`rocm[devel]` pip) |
+| Node.js | >= 26 (CI bootstrap; locally `npm run pt -- <cmd>`) |
 | Runner | `windows-2022` (hosted) |
 
 ### `VERSION.lock.json` sections
@@ -42,7 +43,7 @@ Prep clones **`pytorch.build_commit`** (SHA or tag; `fetch origin <ref>` + `chec
 
 ## Build profile
 
-- **Full PyTorch source build** (`setup.py build` → `bdist_wheel`)
+- **Full PyTorch source build** (cache-miss: `setup.py build`; cache-hit: `ninja -C build install` → `bdist_wheel`)
 - **USE_ROCM_CK_SDPA=ON** (Windows + gfx120x patches)
 - **`PYTORCH_ROCM_ARCH`** = lock `compile.gpu_archs` (semicolon-separated on Windows)
 - **`CK_TARGETS`** = derived from `compile.gpu_archs` (currently `gfx1200;gfx1201` → `--targets gfx12`)
@@ -57,9 +58,11 @@ The lock now defaults to **full fwd + bwd** (`compile.ck_disable_bwd` removed). 
 | Item | inference-only (old) | full bwd (current) |
 |------|----------------------|--------------------|
 | CK codegen | fwd / fwd_splitkv / fwd_appendkv only | adds bwd list + emit + blob steps |
-| Wheel size | ~302 MiB reference (build100) | expected larger (bwd kernels in `torch_hip.dll`, etc.; check Release manifest `size_bytes` after first full-bwd CI) |
+| Wheel size | ~302 MiB reference (build100 / build103, inference-only) | use Release manifest `size_bytes` after first full-bwd success (no full-bwd Release yet) |
 | CI full compile | build100 scale | expected significantly longer (extra bwd ninja targets + codegen; cold compile may hit the 5h watchdog retry) |
 | ComfyUI diffusion | fwd only; old wheel sufficient | default full wheel works as-is; larger but supports training / backward |
+
+> **Release status:** Source defaults to full bwd, but the latest Release (e.g. serial-build103) was built before full bwd landed (manifest may still show legacy `ck_disable_bwd: true`; size similar to build100). The next successful CI run produces the full-bwd wheel described here.
 
 > fav_v3 (MI3xx AITER ASM) is still omitted unless lock includes gfx942/gfx950; current gfx120x lock skips fav_v3.
 
@@ -78,12 +81,25 @@ Push to `main` does **not** auto-trigger builds.
 | `ninja_workers` | `4` | Ninja parallel workers (use `2` if OOM) |
 | `use_cache` | `true` | Set `false` to skip restore (still probes `exists`; `used=false`; save only after a successful compile) |
 | `publish_release` | `true` | Set `false` to skip GitHub Release upload |
+| `retry_count` | `0` | Auto-incremented by watchdog retry; keep default when triggering manually |
+
+### Watchdog and auto-retry
+
+GitHub-hosted runner jobs have a **6-hour** hard limit. Compile uses a **5-hour** watchdog from A00 bootstrap step one: on expiry, 3× SIGINT graceful abort → save worktree + ccache → auto dispatch retry (`retry_count` increments internally, default `0`, **give up at ≥8**; no need to set when triggering manually).
+
+| Condition | Behavior |
+|-----------|----------|
+| `use_cache=true` (default) | Save cache and auto-retry after abort |
+| `use_cache=false` | No save on compile failure; **no** auto-retry |
+| `taskkill` after 3× SIGINT | No save, no retry (`ABORT_FORCE_KILLED`) |
+
+wheel / verify / publish do not run unless compile succeeds. `wheel.manifest.json` `dispatch` records `retry_count` and other workflow snapshot fields (see schema below). **Serial** runs `09-retry` inside the compile job on watchdog abort (ordinary compile failure does not retry). See [docs/watchdog-design.md](docs/watchdog-design.md).
 
 ### Serial (`build-pytorch-ck-gfx120x-serial.yml`)
 
 | Job | Role | Timeout |
 |-----|------|---------|
-| `compile-and-wheel` | bootstrap (toolchain + worktree restore + verify + mtime pin), `08.build` + `09-retry`/`10.wheel`, CPU smoke test | 12 h |
+| `compile-and-wheel` | bootstrap (toolchain + worktree restore + verify + mtime pin), `08.build` + `09-retry`/`10.wheel`, CPU smoke test | 6 h (GitHub limit; compile bounded by 5h watchdog) |
 
 **Worktree cache** (entire `C:\pt\pytorch`: patched source + hipify + `build/`):
 
@@ -96,7 +112,7 @@ Push to `main` does **not** auto-trigger builds.
 - `ninja` / `cmake`: major.minor from `ninja --version` / `cmake --version`
 - **Exact match only** (no `restore-keys`)
 - **hit + verify pass**: skip prep / patch / hipify
-- **compile**: always **`setup.py build`** (upstream skips configure when `build/` is valid)
+- **compile**: on cache-hit with valid `build.ninja`, **`ninja -C build install`** (skips CMake reconfigure); otherwise **`setup.py build`** via `build-pytorch-steps.py --step build`
 - **save**: `use_cache=true` saves after compile (not skipped); `use_cache=false` saves only on success
 - **miss / verify fail**: prep → patch → hipify → compile → save
 
@@ -104,11 +120,11 @@ A separate **pip toolchain cache** (`PIP_TOOLCHAIN_CACHE_KEY`: `pt-pip-toolchain
 
 ### Build stages
 
-After bootstrap (`01.config`–`07.pin-mtimes`, via A00), the serial workflow runs CLI `08`–`12` in order; `08.build` / `10.wheel` invoke `build/build-pytorch-steps.py --step build|wheel`:
+After bootstrap (`01.config`–`07.pin-mtimes`, via A00), the serial workflow runs CLI `08`–`12` in order; `10.wheel` invokes `build/build-pytorch-steps.py --step wheel`:
 
 | CLI | setuptools step | Role |
 |-----|-----------------|------|
-| `08.build` | `build` | `setup.py build` (upstream skips configure when `build/` is valid) |
+| `08.build` | `build` | cache-hit: `ninja -C build install`; cache-miss: `setup.py build` (via `build-pytorch-steps.py --step build`) |
 | `09-retry` | — | Dispatch retry workflow after watchdog abort (after A04 save; `if: always()` guard; skipped on success path) |
 | `10.wheel` | `wheel` | `setup.py bdist_wheel`, copies the single `.whl` to `--dist-dir` |
 | `11.verify` | — | CPU wheel smoke test (structure/CK symbols/SHA256/manifest + pip install + `is_ck_sdpa_available()`) |
@@ -128,10 +144,25 @@ GitHub Release (uploaded after a successful build when `publish_release=true`; *
 |----------|-------------|----------------------|
 | serial | `torch-ck-cp312-rocm7.14.0-gfx120x-serial-build123` | PyTorch CK SDPA gfx120x Windows 2026.08.10 19:00:00 |
 
+- `torch-*.whl`
+- `torch-*.whl.sha256`
+- `wheel.manifest.json`
+
 ```powershell
 gh release list
 gh release download torch-ck-cp312-rocm7.14.0-gfx120x-serial-build123 -D .\dist
 ```
+
+`wheel.manifest.json` is written by `11.verify` (uploaded via `A99.pt-verify-publish` in CI). Main fields:
+
+| Field | Meaning |
+|-------|---------|
+| `dispatch` | `ninja_workers`, `use_cache`, `retry_count` (workflow snapshot) |
+| `build_caches[]` | worktree cache metadata (`opt_dim` / `key` / `exists` / `used`) |
+| `ck_opt_dim`, `gpu_archs`, `ck_targets` | lock compile config snapshot |
+| `size_bytes`, `sha256` | wheel size and checksum |
+
+> Legacy manifests may include top-level `ck_disable_bwd: true` or `worktree-v2-*` cache keys; trust current `11.verify` output. Local samples under `dist/` may be from older CI runs.
 
 Expected wheel name (derived from `wheel.wheel_local_version` + `toolchain.python`; PEP 440 normalizes `-` to `.` in the local tag):
 
@@ -157,7 +188,7 @@ $PY = "<ComfyUI>\python_embeded\python.exe"
 
 After replacing the torch wheel under `python_embeded`:
 
-- Current wheel is **full CK Tile FMHA** (forward + backward); fav_v3 omitted (lock has no MI3xx arch)
+- Source defaults to **full CK Tile FMHA** (forward + backward); fav_v3 omitted (lock has no MI3xx arch). Releases built before full bwd landed (see above) may still be inference-only; diffusion inference works with those wheels too
 - Keep launch arg **`--use-pytorch-cross-attention`**
 - Set env **`TORCH_ROCM_FA_PREFER_CK=1`** (or call `torch.backends.cuda.preferred_rocm_fa_library("ck")` at runtime)
 
