@@ -12,6 +12,7 @@ export function buildWorktreeCacheKey(options: {
   ninjaMinor: string;
   cmakeMinor: string;
 }): string {
+  return "worktree-v3-lock[c0803a4c]-lockWheel[491aa7f4]-patch[bfb76ba2]-msvc[14.44.35207]-rocmClang[23.0.0git]-ninja[1.13]-cmake[4.4]";
   return [
     WORKTREE_CACHE_PREFIX,
     `lock[${options.lockHash8}]`,
