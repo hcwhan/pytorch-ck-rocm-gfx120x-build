@@ -351,8 +351,10 @@ function buildSkipFavV3AtenPoints(): PatchPoint[] {
  * 2. cmake/External/aotriton.cmake — 外部依赖 UPDATE_DISCONNECTED、CMAKE_SUPPRESS_REGENERATION 与编译选项注入（local）
  * 3. Context.cpp / launch_kernel_pt.hpp — #188114 gfx120x 架构支持
  * 4. hip/flash_attn/flash_api.h — 移除 mha_fwd_ck 声明的 TORCH_API（local，Windows dllimport）
- * 5. ck/CMakeLists.txt — Windows codegen 适配 + CK_TARGETS（buildCkCmakePoints）
- * 6. aten/CMakeLists.txt — #188114 arch whitelist；无 MI3xx 时 skip fav_v3（buildSkipFavV3AtenPoints）
+ * 5. gloo/cuda_collectives_native.h — (void)cudaDeviceEnablePeerAccess，消除 hipify 后 [-Wunused-value]（local）
+ * 6. torch/headeronly/macros/Macros.h — clang-cl 跳过 _wassert 的 C10_IMPORT/dllimport（local）
+ * 7. ck/CMakeLists.txt — Windows codegen 适配 + CK_TARGETS（buildCkCmakePoints）
+ * 8. aten/CMakeLists.txt — #188114 arch whitelist；无 MI3xx 时 skip fav_v3（buildSkipFavV3AtenPoints）
  */
 export function runPatch(options: { ptSrc: string }): void {
   const root = path.resolve(options.ptSrc);
@@ -412,8 +414,9 @@ export function runPatch(options: { ptSrc: string }): void {
   const msvcExternalCFlags = "/utf-8 /Brepro";
   const clangExternalCFlags =
     "/utf-8 /Brepro -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument";
+  // xz/liblzma：clang-cl -Wno 列表 + 末尾 -w，覆盖子工程 CMake 后续追加的 -Wall 等
   const xzExternalCFlags =
-    "/utf-8 /Brepro -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument -Wno-unsafe-buffer-usage -Wno-declaration-after-statement -Wno-disabled-macro-expansion -Wno-implicit-void-ptr-cast -Wno-reserved-macro-identifier -Wno-jump-misses-init -Wno-padded -Wno-reserved-identifier -Wno-used-but-marked-unused -Wno-nonportable-system-include-path -Wno-unused-parameter -Wno-implicit-int-conversion -Wno-implicit-int-enum-cast -Wno-deprecated-declarations -Wno-c++-unterminated-string-initialization -Wno-sign-compare -Wno-conditional-uninitialized -Wno-covered-switch-default -Wno-sign-conversion -Wno-cast-align -Wno-shorten-64-to-32 -Wno-extra-semi-stmt -Wno-c++-keyword -Wno-switch-default -Wno-switch-enum -Wno-cast-qual -Wno-undef -Wno-overlength-strings";
+    "/utf-8 /Brepro -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument -Wno-unsafe-buffer-usage -Wno-declaration-after-statement -Wno-disabled-macro-expansion -Wno-implicit-void-ptr-cast -Wno-reserved-macro-identifier -Wno-jump-misses-init -Wno-padded -Wno-reserved-identifier -Wno-used-but-marked-unused -Wno-nonportable-system-include-path -Wno-unused-parameter -Wno-implicit-int-conversion -Wno-implicit-int-enum-cast -Wno-deprecated-declarations -Wno-c++-unterminated-string-initialization -Wno-sign-compare -Wno-conditional-uninitialized -Wno-covered-switch-default -Wno-sign-conversion -Wno-cast-align -Wno-shorten-64-to-32 -Wno-extra-semi-stmt -Wno-c++-keyword -Wno-switch-default -Wno-switch-enum -Wno-cast-qual -Wno-undef -Wno-overlength-strings -Wno-global-constructors -Wno-pointer-sign -Wno-pre-c11-compat -Wno-unterminated-string-initialization -w";
   applyPoints(path.join(root, "cmake/External/aotriton.cmake"), [
     // dlfcn-win32：CMAKE_ARGS（仅首次 configure 生效）+ UPDATE_DISCONNECTED
     {
@@ -477,6 +480,33 @@ export function runPatch(options: { ptSrc: string }): void {
       -DCMAKE_SUPPRESS_REGENERATION:BOOL=ON
       -DAOTRITON_TARGET_ARCH:STRING=\${PYTORCH_ROCM_ARCH}
       -DCMAKE_INSTALL_PREFIX:FILEPATH=\${__AOTRITON_INSTALL_DIR}`,
+    },
+  ]);
+
+  applyPoints(path.join(root, "third_party/gloo/gloo/cuda_collectives_native.h"), [
+    // local：pytorch/gloo@bcd1672 未 cast peer-access 返回值；hipify 后在 gloo_hip 触发
+    // [-Wunused-value]（hipDeviceEnablePeerAccess nodiscard），Run #107 约 510 条
+    {
+      name: "gloo-cuda-peer-access-void-cast",
+      before: "        cudaDeviceEnablePeerAccess(devB, 0);",
+      after: "        (void)cudaDeviceEnablePeerAccess(devB, 0);",
+      replaceAll: true,
+    },
+  ]);
+
+  applyPoints(path.join(root, "torch/headeronly/macros/Macros.h"), [
+    // local：clang-cl 不支持 _wassert 上的 __declspec(dllimport)（[-Wignored-attributes]），
+    // gloo_hip 编译含 Macros.h 时约 16 条；MSVC cl 仍保留 C10_IMPORT
+    {
+      name: "macros-msvc-wassert-skip-dllimport-clang",
+      before: `extern "C" {
+C10_IMPORT
+#if defined(__SYCL_DEVICE_ONLY__)`,
+      after: `extern "C" {
+#if !defined(__clang__)
+C10_IMPORT
+#endif
+#if defined(__SYCL_DEVICE_ONLY__)`,
     },
   ]);
 
