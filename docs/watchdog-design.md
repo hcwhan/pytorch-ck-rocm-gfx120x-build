@@ -28,7 +28,7 @@ GitHub-hosted runner 的 job 执行硬上限为 **6 小时**（不可突破）�
    中止期间 Node 通过 `process.on('SIGINT')` + `swallowSigint` 拦截误传到自身的 SIGINT，以保持存活并完成 save。
 4. 编译正常完成：写 `COMPILE_COMPLETE=true`，继续 wheel 打包。
 5. A04 save（`use_cache=true` 时失败也 save）存档 worktree + ccache。
-6. save 后 **`12.watchdog-retry`**（workflow 条件：`!cancelled() && ABORT_TRIGGERED && !COMPILE_COMPLETE && ABORT_FORCE_KILLED != 'true'`）：
+6. save 后 **`09-retry`**（workflow 条件：`!cancelled() && ABORT_TRIGGERED && !COMPILE_COMPLETE && ABORT_FORCE_KILLED != 'true'`）：
    - `use_cache=false` → 报错退出
    - `retry_count >= 8` → 报错退出
    - 否则 `gh api workflow_dispatch` 触发 retry（**3 次重试，间隔 1min**），
@@ -50,7 +50,7 @@ GitHub-hosted runner 的 job 执行硬上限为 **6 小时**（不可突破）�
 | `ABORT_TRIGGERED` | `watchdog.ts`（`08.build` 调用） | `true` = 已触发优雅中止 |
 | `ABORT_FORCE_KILLED` | `watchdog.ts` | `true` = 3× SIGINT 失败、已 taskkill；**不 save、不 retry** |
 | `COMPILE_COMPLETE` | `08.build` | `true` = 编译成功；中止时写 `false` |
-| `RETRY_COUNT` | workflow input → env | 当前 retry 计数（manifest `dispatch.retry_count`；仅 save 后 `12.watchdog-retry` 判断） |
+| `RETRY_COUNT` | workflow input → env | 当前 retry 计数（manifest `dispatch.retry_count`；仅 save 后 `09-retry` 判断） |
 | `PUBLISH_RELEASE` | workflow input → env | retry dispatch 时继承 `publish_release` |
 
 ## 为什么用 SIGINT + 吞信号
@@ -86,9 +86,9 @@ bootstrap composite 第一步（Setup Node 之前）写入 `$GITHUB_ENV`。
 - `spawn` 编译子进程后调用 `createWatchdog(buildHandle.child, jobStartMs)`
 - 成功：`COMPILE_COMPLETE=true`；看门狗中止：throw 使 build step 失败以触发 save
 
-### 12.watchdog-retry.ts
+### 09-retry.ts
 
-- workflow `if:` 条件触发后调用 `npx tsx scripts/cli.ts 12.watchdog-retry`
+- workflow `if:` 条件触发后调用 `npx tsx scripts/cli.ts 09-retry`
 - 脚本入口校验 `ABORT_FORCE_KILLED=true` → 报错退出（与 workflow `if:` 双重门禁）
 - `retry_count` 仅在 save 后判断（`< 8` 才 dispatch）
 - `gh api workflow_dispatch`：3 次重试，间隔 60s，全失败则 throw

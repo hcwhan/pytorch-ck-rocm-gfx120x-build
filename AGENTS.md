@@ -22,7 +22,7 @@
 | Worktree cache exists | `worktree-cache-exists` | A03 output / manifest `build_caches[].exists` |
 | Worktree cache used | `worktree-cache-used` / `WORKTREE_CACHE_USED` | restore hit 且 `06.verify-bootstrap` 通过 → 跳过 prep/patch/hipify（manifest `used`） |
 | Ccache key | `CCACHE_CACHE_KEY` | `02.toolchain-fingerprint` → A02 restore / A06 save |
-| Compile cache metadata | `--build-caches` | workflow 写入 `dist/build-caches.json` → 10.verify → manifest `build_caches`（`opt_dim/key/exists/used`） |
+| Compile cache metadata | `--build-caches` | workflow 写入 `dist/build-caches.json` → 11.verify → manifest `build_caches`（`opt_dim/key/exists/used`） |
 | wheel local tag | `WHEEL_LOCAL_VERSION` | lock `wheel.wheel_local_version` |
 | PT 相关 env | `PYTORCH_*` | repo / commit / force-build 等 |
 
@@ -52,10 +52,10 @@
 | `06.verify-bootstrap` | worktree cache hit 后校验 prep+patch+hipify 产物（不含 `build/`）；失败则 fallback miss |
 | `07.pin-mtimes` | bootstrap 末尾将 PT 工作树 + ROCm SDK 外部头文件 mtime 固定为 `SOURCE_DATE_EPOCH`（满足 ninja 3 条 dirty 检查；见下方"缓存复用"节） |
 | `08.build` | cache-hit 时 `ninja -C`（跳过 CMake reconfigure，保 `.ninja_log`）；cache-miss 时 `setup.py build`（cmake configure + 全量编译）；`initBuildEnv` 含 ccache launcher + requirements；**自 bootstrap 起 5h 看门狗（deadline → 3× SIGINT → save 后 workflow retry）**（`watchdog.ts`；详见 `docs/watchdog-design.md`） |
-| `09.wheel` | `setup.py bdist_wheel` → 复制到 `dist/`（env 重设，不重复 pip install） |
-| `10.verify` | CPU 冒烟（wheel CK fwd/bwd dim 符号 + `is_ck_sdpa_available()`）；manifest `dispatch` 含 `retry_count` |
-| `11.publish` | Release 元数据 |
-| `12.watchdog-retry` | 看门狗中断后 dispatch retry workflow（`gh api` 3 次重试 + 等 300s concurrency cancel；需 env `USE_CACHE`/`RETRY_COUNT`/`PUBLISH_RELEASE`/`GH_TOKEN`） |
+| `09-retry` | 看门狗中断后 dispatch retry workflow（`gh api` 3 次重试 + 等 300s concurrency cancel；需 env `USE_CACHE`/`RETRY_COUNT`/`PUBLISH_RELEASE`/`GH_TOKEN`） |
+| `10.wheel` | `setup.py bdist_wheel` → 复制到 `dist/`（env 重设，不重复 pip install） |
+| `11.verify` | CPU 冒烟（wheel CK fwd/bwd dim 符号 + `is_ck_sdpa_available()`）；manifest `dispatch` 含 `retry_count` |
+| `12.publish` | Release 元数据 |
 | `build/build-pytorch-steps.py` | `--step build` / `--step wheel` |
 | `build/add-make-kernel-pt.py` | CK FMHA blob `make_kernel`→`make_kernel_pt`（`04.patch` 复制到 PT 源码 `ck/`） |
 | `test/gpu-smoke-test.py` | 部署前 GPU 校验（gfx120x 真机；CK SDPA fwd/bwd；CI 不跑） |
@@ -75,7 +75,7 @@
 | `A04.pt-build-with-cache` | 编译 + save worktree + ccache |
 | `A05.worktree-cache-save` | 保存整棵 PT 工作树（patch+hipify+build/） |
 | `A06.ccache-save` | 保存 ccache 目录 |
-| `A99.pt-verify-publish` | `10.verify` + artifact + 可选 Release |
+| `A99.pt-verify-publish` | `11.verify` + artifact + 可选 Release |
 
 ## 设计决策
 
@@ -92,7 +92,7 @@
 - **worktree hit bootstrap**：`06.verify-bootstrap` 通过则 skip prep/patch/hipify；verify 失败 fallback miss
 - **compile**：cache-hit 时 `ninja -C build install`（跳过 CMake reconfigure，保 `.ninja_log`）；cache-miss 时 `setup.py build`
 - **ccache**：`CMAKE_*_COMPILER_LAUNCHER=ccache`；GHA cache `ccache-v3-lock[…]-patch[…]-msvc[…]-rocmClang[…]-ninja[…]-cmake[…]`（无 `lockWheel`）
-- **看门狗 5h 优雅中断**：A00 第一步写 `JOB_START_TIME`；`watchdog.ts` 单次 deadline 到期后写 `ABORT_TRIGGERED`/`COMPILE_COMPLETE=false`，3× SIGINT（1min 间隔；失败则 `ABORT_FORCE_KILLED` + taskkill，**不 save/retry**）；A04 save 后 `12.watchdog-retry` 在 `use_cache=true && retry_count<8 && !ABORT_FORCE_KILLED` 时 dispatch retry（3 次重试）并等 300s；wheel 等下游 `if: success()`（详见 `docs/watchdog-design.md`）
+- **看门狗 5h 优雅中断**：A00 第一步写 `JOB_START_TIME`；`watchdog.ts` 单次 deadline 到期后写 `ABORT_TRIGGERED`/`COMPILE_COMPLETE=false`，3× SIGINT（1min 间隔；失败则 `ABORT_FORCE_KILLED` + taskkill，**不 save/retry**）；A04 save 后 `09-retry` 在 `use_cache=true && retry_count<8 && !ABORT_FORCE_KILLED` 时 dispatch retry（3 次重试）并等 300s；wheel 等下游 `if: success()`（详见 `docs/watchdog-design.md`）
 
 ## 缓存复用
 
@@ -129,7 +129,7 @@ worktree cache 恢复后，ninja 必须同时通过 **3 条 dirty 检查**才跳
 
 **不要添加：** 双源校验、manifest 读回自证、`PT_SKIP_*`、patch 内硬编码 lock 字段、命令内二次 `readVersionLock`、单行 composite 包装。
 
-**应当保留：** patch 补丁前状态；`10.verify` CK dim 符号扫描；worktree cache 精确 key（`worktree-v3-…`）；`04.patch` `/Brepro`。
+**应当保留：** patch 补丁前状态；`11.verify` CK dim 符号扫描；worktree cache 精确 key（`worktree-v3-…`）；`04.patch` `/Brepro`。
 
 ## 维护
 

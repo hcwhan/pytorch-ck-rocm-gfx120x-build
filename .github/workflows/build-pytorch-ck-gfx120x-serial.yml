@@ -67,7 +67,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: npx tsx scripts/cli.ts 12.watchdog-retry
+        run: npx tsx scripts/cli.ts 09-retry
 
       - name: Write worktree cache metadata
         if: success()
@@ -85,7 +85,7 @@ jobs:
       - name: Package torch wheel
         if: success()
         shell: pwsh
-        run: npx tsx scripts/cli.ts 09.wheel --pt-src $env:PT_SRC --dist-dir $env:GITHUB_WORKSPACE\dist
+        run: npx tsx scripts/cli.ts 10.wheel --pt-src $env:PT_SRC --dist-dir $env:GITHUB_WORKSPACE\dist
 
       - name: Verify wheel, upload artifact, and publish
         if: success()

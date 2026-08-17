@@ -83,7 +83,7 @@ Push to `main` does **not** auto-trigger builds.
 
 | Job | Role | Timeout |
 |-----|------|---------|
-| `compile-and-wheel` | bootstrap (toolchain + worktree restore + verify + mtime pin), `08.build` + `09.wheel`, CPU smoke test | 12 h |
+| `compile-and-wheel` | bootstrap (toolchain + worktree restore + verify + mtime pin), `08.build` + `09-retry`/`10.wheel`, CPU smoke test | 12 h |
 
 **Worktree cache** (entire `C:\pt\pytorch`: patched source + hipify + `build/`):
 
@@ -104,14 +104,17 @@ A separate **pip toolchain cache** (`PIP_TOOLCHAIN_CACHE_KEY`: `pt-pip-toolchain
 
 ### Build stages
 
-Compile and wheel packaging go through CLI commands `08.build` / `09.wheel` (which invoke `build/build-pytorch-steps.py --step build|wheel`):
+After bootstrap (`01.config`–`07.pin-mtimes`, via A00), the serial workflow runs CLI `08`–`12` in order; `08.build` / `10.wheel` invoke `build/build-pytorch-steps.py --step build|wheel`:
 
 | CLI | setuptools step | Role |
 |-----|-----------------|------|
 | `08.build` | `build` | `setup.py build` (upstream skips configure when `build/` is valid) |
-| `09.wheel` | `wheel` | `setup.py bdist_wheel`, copies the single `.whl` to `--dist-dir` |
+| `09-retry` | — | Dispatch retry workflow after watchdog abort (after A04 save; `if: always()` guard; skipped on success path) |
+| `10.wheel` | `wheel` | `setup.py bdist_wheel`, copies the single `.whl` to `--dist-dir` |
+| `11.verify` | — | CPU wheel smoke test (structure/CK symbols/SHA256/manifest + pip install + `is_ck_sdpa_available()`) |
+| `12.publish` | — | Prepare GitHub Release metadata (`publish_release=true`, via A99) |
 
-Serial workflow invocation: `npx tsx scripts/cli.ts 08.build` → `09.wheel`. Equivalent: `npm run pt -- 08.build` (CLI program name `pt-build`).
+Success path: `npx tsx scripts/cli.ts 08.build` → `10.wheel` → `11.verify` → `12.publish`. On watchdog abort, `09-retry` runs after `08.build`. Equivalent: `npm run pt -- 08.build` (CLI program name `pt-build`).
 
 Env is set uniformly via `scripts/lib/init-build-env.ts` (includes `SOURCE_DATE_EPOCH` from `pytorch.build_commit_date`).
 
@@ -140,10 +143,10 @@ torch-*+ck.rocm7.14.0.gfx120x*-cp312-cp312-win_amd64.whl
 
 | Check | Script |
 |-------|--------|
-| CI smoke test (CPU) | `npx tsx scripts/cli.ts 10.verify --dist-dir dist --build-caches dist\build-caches.json` |
+| CI smoke test (CPU) | `npx tsx scripts/cli.ts 11.verify --dist-dir dist --build-caches dist\build-caches.json` |
 | Pre-deploy GPU smoke test (gfx120x hardware) | `python test/gpu-smoke-test.py -w .` |
 
-Smoke test (`10.verify`, CPU): wheel filename/structure (CK fwd/bwd dim markers) → SHA256 / manifest → pip install → `torch.backends.cuda.is_ck_sdpa_available()`. GPU CK SDPA fwd/bwd is in `test/gpu-smoke-test.py` (**pip install the wheel first**; run manually on gfx120x hardware before deploy; does not replace `10.verify`; uses `sdpa_kernel(SDPBackend.FLASH_ATTENTION)` under `TORCH_ROCM_FA_PREFER_CK=1` so fwd/bwd must use CK, not math fallback).
+Smoke test (`11.verify`, CPU): wheel filename/structure (CK fwd/bwd dim markers) → SHA256 / manifest → pip install → `torch.backends.cuda.is_ck_sdpa_available()`. GPU CK SDPA fwd/bwd is in `test/gpu-smoke-test.py` (**pip install the wheel first**; run manually on gfx120x hardware before deploy; does not replace `11.verify`; uses `sdpa_kernel(SDPBackend.FLASH_ATTENTION)` under `TORCH_ROCM_FA_PREFER_CK=1` so fwd/bwd must use CK, not math fallback).
 
 ## ComfyUI install
 

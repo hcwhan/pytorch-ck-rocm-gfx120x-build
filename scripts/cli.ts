@@ -8,10 +8,10 @@ import { runHipify } from "./commands/05.hipify.js";
 import { runVerifyBootstrap } from "./commands/06.verify-bootstrap.js";
 import { runPinMtimes } from "./commands/07.pin-mtimes.js";
 import { runBuild } from "./commands/08.build.js";
-import { runWheel } from "./commands/09.wheel.js";
-import { runVerify } from "./commands/10.verify.js";
-import { runPublish } from "./commands/11.publish.js";
-import { runWatchdogRetry } from "./commands/12.watchdog-retry.js";
+import { runWatchdogRetry } from "./commands/09-retry.js";
+import { runWheel } from "./commands/10.wheel.js";
+import { runVerify } from "./commands/11.verify.js";
+import { runPublish } from "./commands/12.publish.js";
 
 const program = new Command();
 
@@ -99,7 +99,16 @@ program
   });
 
 program
-  .command("09.wheel")
+  .command("09-retry")
+  .description(
+    "看门狗中断后 dispatch retry workflow（A04 save 完成后由 workflow 条件触发）",
+  )
+  .action(async () => {
+    await runWatchdogRetry();
+  });
+
+program
+  .command("10.wheel")
   .description("打包 torch wheel（setup.py bdist_wheel）并复制到 dist-dir")
   .requiredOption("--pt-src <path>")
   .requiredOption("--dist-dir <path>")
@@ -111,7 +120,7 @@ program
   });
 
 program
-  .command("10.verify")
+  .command("11.verify")
   .description(
     "CPU wheel 校验（结构/CK 符号/SHA256/manifest）+ pip 安装冒烟 + is_ck_sdpa_available()",
   )
@@ -128,7 +137,7 @@ program
   });
 
 program
-  .command("11.publish")
+  .command("12.publish")
   .description("准备 GitHub Release 元数据")
   .requiredOption("--dist-dir <path>")
   .requiredOption("--workflow-name <name>")
@@ -137,15 +146,6 @@ program
       distDir: opts.distDir,
       workflowName: opts.workflowName,
     });
-  });
-
-program
-  .command("12.watchdog-retry")
-  .description(
-    "看门狗中断后 dispatch retry workflow（A04 save 完成后由 workflow 条件触发）",
-  )
-  .action(async () => {
-    await runWatchdogRetry();
   });
 
 program.parseAsync(process.argv).catch((error: unknown) => {

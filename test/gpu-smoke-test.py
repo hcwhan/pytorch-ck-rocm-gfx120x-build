@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""部署前 torch CK SDPA GPU 冒烟测试（gfx120x 真机；需已 pip install wheel；CI 不运行；不替代 10.verify）。"""
+"""部署前 torch CK SDPA GPU 冒烟测试（gfx120x 真机；需已 pip install wheel；CI 不运行；不替代 11.verify）。"""
 from __future__ import annotations
 
 import argparse
