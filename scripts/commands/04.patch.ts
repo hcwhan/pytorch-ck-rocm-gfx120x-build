@@ -460,19 +460,22 @@ export function runPatch(options: { ptSrc: string }): void {
         "-DCMAKE_C_FLAGS=${xzExternalCFlags}"
         -DCMAKE_INSTALL_PREFIX=\${__XZ_INSTALL_DIR}`,
     },
-    // aotriton_runtime：CMAKE_CACHE_ARGS + UPDATE_DISCONNECTED
+    // aotriton_runtime：CMAKE_ARGS 注入 flags（dlfcn/xz 同模式）；CMAKE_CACHE_ARGS 仅存无空格 cache 项
+    // （STRING 含空格会被 CMake 拆成 list，clang-cl 收到 ;/utf-8;/Brepro;... 单参数而 configure 失败）
     {
       name: "aotriton-runtime-update-disconnected",
       before: `      CMAKE_CACHE_ARGS
       -DAOTRITON_TARGET_ARCH:STRING=\${PYTORCH_ROCM_ARCH}
       -DCMAKE_INSTALL_PREFIX:FILEPATH=\${__AOTRITON_INSTALL_DIR}`,
       after: `      UPDATE_DISCONNECTED TRUE
+      CMAKE_ARGS
+        -DCMAKE_SUPPRESS_REGENERATION:BOOL=ON
+        "-DCMAKE_C_FLAGS=${clangExternalCFlags}"
+        "-DCMAKE_CXX_FLAGS=${clangExternalCFlags}"
+        -DCMAKE_SHARED_LINKER_FLAGS=/Brepro
+        -DCMAKE_EXE_LINKER_FLAGS=/Brepro
       CMAKE_CACHE_ARGS
       -DCMAKE_SUPPRESS_REGENERATION:BOOL=ON
-      -DCMAKE_C_FLAGS:STRING="${clangExternalCFlags}"
-      -DCMAKE_CXX_FLAGS:STRING="${clangExternalCFlags}"
-      -DCMAKE_SHARED_LINKER_FLAGS:STRING=/Brepro
-      -DCMAKE_EXE_LINKER_FLAGS:STRING=/Brepro
       -DAOTRITON_TARGET_ARCH:STRING=\${PYTORCH_ROCM_ARCH}
       -DCMAKE_INSTALL_PREFIX:FILEPATH=\${__AOTRITON_INSTALL_DIR}`,
     },
