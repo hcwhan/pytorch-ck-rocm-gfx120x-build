@@ -408,10 +408,12 @@ export function runPatch(options: { ptSrc: string }): void {
 
   // local：三处 ExternalProject（dlfcn-win32 / xz / aotriton_runtime）在缓存
   // 恢复后续编时不重新 configure，从而保住各子树的 .ninja_log，跳过 ~4110
-  // aotriton autotune 对象重编。dlfcn/xz 用 MSVC cl（仅 /utf-8 /Brepro）；aotriton_runtime 用 clang-cl。
+  // aotriton autotune 对象重编。dlfcn 用 MSVC cl（/utf-8 /Brepro）；xz / aotriton_runtime 用 clang-cl。
   const msvcExternalCFlags = "/utf-8 /Brepro";
   const clangExternalCFlags =
     "/utf-8 /Brepro -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument";
+  const xzExternalCFlags =
+    "/utf-8 /Brepro -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument -Wno-unsafe-buffer-usage -Wno-declaration-after-statement -Wno-disabled-macro-expansion -Wno-implicit-void-ptr-cast -Wno-reserved-macro-identifier -Wno-jump-misses-init -Wno-padded -Wno-reserved-identifier -Wno-used-but-marked-unused -Wno-nonportable-system-include-path -Wno-unused-parameter -Wno-implicit-int-conversion -Wno-implicit-int-enum-cast -Wno-deprecated-declarations -Wno-c++-unterminated-string-initialization -Wno-sign-compare -Wno-conditional-uninitialized -Wno-covered-switch-default -Wno-sign-conversion -Wno-cast-align -Wno-shorten-64-to-32 -Wno-extra-semi-stmt -Wno-c++-keyword -Wno-switch-default -Wno-switch-enum -Wno-cast-qual -Wno-undef -Wno-overlength-strings";
   applyPoints(path.join(root, "cmake/External/aotriton.cmake"), [
     // dlfcn-win32：CMAKE_ARGS（仅首次 configure 生效）+ UPDATE_DISCONNECTED
     {
@@ -437,7 +439,7 @@ export function runPatch(options: { ptSrc: string }): void {
         -DCMAKE_EXE_LINKER_FLAGS=/Brepro
         -DCMAKE_INSTALL_PREFIX=\${__DLFCN_WIN32_INSTALL_DIR}`,
     },
-    // xz/liblzma：同上
+    // xz/liblzma：继承父工程 clang-cl（非 dlfcn 的 MSVC cl）
     {
       name: "aotriton-xz-update-disconnected",
       before: `    ExternalProject_Add(\${xz_external}
@@ -455,7 +457,7 @@ export function runPatch(options: { ptSrc: string }): void {
       UPDATE_DISCONNECTED TRUE
       CMAKE_ARGS
         -DCMAKE_SUPPRESS_REGENERATION:BOOL=ON
-        "-DCMAKE_C_FLAGS=${msvcExternalCFlags}"
+        "-DCMAKE_C_FLAGS=${xzExternalCFlags}"
         -DCMAKE_INSTALL_PREFIX=\${__XZ_INSTALL_DIR}`,
     },
     // aotriton_runtime：CMAKE_CACHE_ARGS + UPDATE_DISCONNECTED
