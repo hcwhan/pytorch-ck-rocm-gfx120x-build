@@ -5,6 +5,7 @@ import {
   formatGpuArchCmakeList,
   formatGpuArchCppDefines,
   formatGpuArchCppStrings,
+  gpuArchListIncludesMi3xxForFavV3,
   parseGpuArchList,
 } from "../lib/gpu-archs.js";
 import { requireLockEnv } from "../lib/require-env.js";
@@ -121,20 +122,15 @@ function applyPoints(filePath: string, points: PatchPoint[]): void {
   writeNormalized(filePath, content, eol);
 }
 
-/** 读取 lock `CK_FMHA_DISABLE_BWD` 是否为 inference-only 构建。 */
-function ckFmhaDisableBwd(): boolean {
-  return requireLockEnv("CK_FMHA_DISABLE_BWD") === "1";
-}
-
 /**
  * CK FMHA 子目录 `flash_attn/ck/CMakeLists.txt` 的 patch 点。
  *
  * 基于 v2.13.0 上游 #143695/#157964 的 codegen 流程，补充 Windows 适配（Python3_EXECUTABLE、
  * 独立 RESULT_VARIABLE）与 #188114 的 `--targets gfx12`（由 lock CK_TARGETS 参数化）。
- * `disableBwd=true` 时省略 bwd codegen（local inference-only）。
+ * 完整编译 fwd 与 bwd codegen。
  */
-function buildCkCmakePoints(ckTargets: string, ckOptDim: string, disableBwd: boolean): PatchPoint[] {
-  const common: PatchPoint[] = [
+function buildCkCmakePoints(ckTargets: string, ckOptDim: string): PatchPoint[] {
+  return [
     // local：Windows 无 python3 命令；上游 #143695/#157964 CK FMHA CMake 假定 Linux python3
     {
       name: "ck-fmha-generate-python3-executable",
@@ -149,6 +145,28 @@ function buildCkCmakePoints(ckTargets: string, ckOptDim: string, disableBwd: boo
       before: `COMMAND \${CK_FMHA_GENERATE} --optdim=${ckOptDim}`,
       after: `COMMAND \${CK_FMHA_GENERATE} ${ckTargets} --optdim=${ckOptDim}`,
       replaceAll: true,
+    },
+    // pytorch/pytorch#188114 + local：bwd list_blobs 传入 --targets，独立 RESULT_VARIABLE
+    {
+      name: "ck-codegen-list-bwd-result",
+      before: `execute_process(
+  COMMAND \${CK_FMHA_GENERATE}
+  --api bwd --optdim=${ckOptDim} --receipt 4 --filter "*psdv*@*psd*@*_pd1dv1*_ntrload*" --list_blobs \${CMAKE_CURRENT_LIST_DIR}/bwd_blob_list.txt
+  RESULT_VARIABLE ret
+)
+
+if(ret AND NOT ret EQUAL 0)
+  message( FATAL_ERROR "CK Tile FMHA FAILED to generate a list of BWD kernels via Python.")
+endif()`,
+      after: `execute_process(
+  COMMAND \${CK_FMHA_GENERATE} ${ckTargets}
+  --api bwd --optdim=${ckOptDim} --receipt 4 --filter "*psdv*@*psd*@*_pd1dv1*_ntrload*" --list_blobs \${CMAKE_CURRENT_LIST_DIR}/bwd_blob_list.txt
+  RESULT_VARIABLE ck_fmha_list_bwd_ret
+)
+
+if(ck_fmha_list_bwd_ret AND NOT ck_fmha_list_bwd_ret EQUAL 0)
+  message( FATAL_ERROR "CK Tile FMHA FAILED to generate a list of BWD kernels via Python.")
+endif()`,
     },
     // local：各 emit 步骤独立 RESULT_VARIABLE；上游共用 ret 在 Windows 易掩盖失败
     {
@@ -201,6 +219,24 @@ if(ck_fmha_emit_fwd_appendkv_ret AND NOT ck_fmha_emit_fwd_appendkv_ret EQUAL 0)
     message( FATAL_ERROR "CK Tile FMHA FAILED to generate FWD_APPENDKV kernels.")
 endif()`,
     },
+    // local：bwd emit 独立 RESULT_VARIABLE
+    {
+      name: "ck-codegen-emit-bwd-result",
+      before: `execute_process(COMMAND \${CK_FMHA_GENERATE} --api bwd --optdim=${ckOptDim} --receipt 4 --filter "*psdv*@*psd*@*_pd1dv1*_ntrload*" --output_dir \${CMAKE_CURRENT_LIST_DIR}
+  RESULT_VARIABLE ret
+)
+
+if(ret AND NOT ret EQUAL 0)
+  message( FATAL_ERROR "CK Tile FMHA FAILED to generate BWD kernels.")
+endif()`,
+      after: `execute_process(COMMAND \${CK_FMHA_GENERATE} ${ckTargets} --api bwd --optdim=${ckOptDim} --receipt 4 --filter "*psdv*@*psd*@*_pd1dv1*_ntrload*" --output_dir \${CMAKE_CURRENT_LIST_DIR}
+  RESULT_VARIABLE ck_fmha_emit_bwd_ret
+)
+
+if(ck_fmha_emit_bwd_ret AND NOT ck_fmha_emit_bwd_ret EQUAL 0)
+  message( FATAL_ERROR "CK Tile FMHA FAILED to generate BWD kernels.")
+endif()`,
+    },
     // local：Windows 无 bash；替代上游 #143695 add_make_kernel_pt.sh
     {
       name: "ck-make-kernel-pt-fwd-python",
@@ -231,6 +267,16 @@ endif()`,
   COMMAND \${Python3_EXECUTABLE} \${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.py \${CMAKE_CURRENT_LIST_DIR}/fwd_appendkv_blob_list.txt
   RESULT_VARIABLE ret)`,
     },
+    // local：bwd blob list 用 Python 替代 #143695 add_make_kernel_pt.sh
+    {
+      name: "ck-make-kernel-pt-bwd-python",
+      before: `execute_process(
+  COMMAND bash -c "\${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.sh \${CMAKE_CURRENT_LIST_DIR}/bwd_blob_list.txt"
+  RESULT_VARIABLE ret)`,
+      after: `execute_process(
+  COMMAND \${Python3_EXECUTABLE} \${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.py \${CMAKE_CURRENT_LIST_DIR}/bwd_blob_list.txt
+  RESULT_VARIABLE ret)`,
+    },
     // local：Windows 无 bash mv；上游 #143695 用 bash 将 .cpp 重命名为 .hip
     {
       name: "ck-rename-cpp-to-hip-cmake",
@@ -245,127 +291,19 @@ endif()`,
       after: `# Change file extensions to .hip
 file(GLOB _ck_fmha_cpp_files "\${CMAKE_CURRENT_LIST_DIR}/*.cpp")
 foreach(_ck_fmha_cpp \${_ck_fmha_cpp_files})
- get_filename_component(_ck_fmha_base \${_ck_fmha_cpp} NAME_WE)
- file(RENAME \${_ck_fmha_cpp} "\${CMAKE_CURRENT_LIST_DIR}/\${_ck_fmha_base}.hip")
+  get_filename_component(_ck_fmha_base \${_ck_fmha_cpp} NAME_WE)
+  file(RENAME \${_ck_fmha_cpp} "\${CMAKE_CURRENT_LIST_DIR}/\${_ck_fmha_base}.hip")
 endforeach()`,
-    },
-  ];
-
-  if (!disableBwd) {
-    return [
-      ...common.slice(0, 2),
-      // pytorch/pytorch#188114 + local：bwd codegen 传入 --targets（CK_TARGETS 参数化）
-      {
-        name: "ck-codegen-list-bwd",
-        before: `  COMMAND \${CK_FMHA_GENERATE}
-  --api bwd --optdim=${ckOptDim}`,
-        after: `  COMMAND \${CK_FMHA_GENERATE} ${ckTargets}
-  --api bwd --optdim=${ckOptDim}`,
-      },
-      ...common.slice(2, 5),
-      // local：bwd emit 独立 RESULT_VARIABLE
-      {
-        name: "ck-codegen-emit-bwd-result",
-        before: `execute_process(COMMAND \${CK_FMHA_GENERATE} --api bwd --optdim=${ckOptDim} --receipt 4 --filter "*psdv*@*psd*@*_pd1dv1*_ntrload*" --output_dir \${CMAKE_CURRENT_LIST_DIR}
-  RESULT_VARIABLE ret
-)
-
-if(ret AND NOT ret EQUAL 0)
-  message( FATAL_ERROR "CK Tile FMHA FAILED to generate BWD kernels.")
-endif()`,
-        after: `execute_process(COMMAND \${CK_FMHA_GENERATE} ${ckTargets} --api bwd --optdim=${ckOptDim} --receipt 4 --filter "*psdv*@*psd*@*_pd1dv1*_ntrload*" --output_dir \${CMAKE_CURRENT_LIST_DIR}
-  RESULT_VARIABLE ck_fmha_emit_bwd_ret
-)
-
-if(ck_fmha_emit_bwd_ret AND NOT ck_fmha_emit_bwd_ret EQUAL 0)
-  message( FATAL_ERROR "CK Tile FMHA FAILED to generate BWD kernels.")
-endif()`,
-      },
-      ...common.slice(5),
-      // local：bwd blob list 用 Python 替代 #143695 add_make_kernel_pt.sh
-      {
-        name: "ck-make-kernel-pt-bwd-python",
-        before: `execute_process(
-  COMMAND bash -c "\${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.sh \${CMAKE_CURRENT_LIST_DIR}/bwd_blob_list.txt"
-  RESULT_VARIABLE ret)`,
-        after: `execute_process(
-  COMMAND \${Python3_EXECUTABLE} \${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.py \${CMAKE_CURRENT_LIST_DIR}/bwd_blob_list.txt
-  RESULT_VARIABLE ret)`,
-      },
-    ];
-  }
-
-  const bwdOmit = "# CK FMHA bwd omitted (inference-only; CK_FMHA_DISABLE_BWD=1)\n";
-  return [
-    ...common.slice(0, 2),
-    // local：inference-only 省略 bwd codegen list（lock CK_FMHA_DISABLE_BWD=1）
-    {
-      name: "ck-codegen-list-bwd-omit",
-      before: `execute_process(
-  COMMAND \${CK_FMHA_GENERATE}
-  --api bwd --optdim=${ckOptDim} --receipt 4 --filter "*psdv*@*psd*@*_pd1dv1*_ntrload*" --list_blobs \${CMAKE_CURRENT_LIST_DIR}/bwd_blob_list.txt
-  RESULT_VARIABLE ret
-)
-
-if(ret AND NOT ret EQUAL 0)
-  message( FATAL_ERROR "CK Tile FMHA FAILED to generate a list of BWD kernels via Python.")
-endif()
-
-`,
-      after: bwdOmit,
-    },
-    ...common.slice(2, 5),
-    // local：inference-only 省略 bwd kernel emit
-    {
-      name: "ck-codegen-emit-bwd-omit",
-      before: `execute_process(COMMAND \${CK_FMHA_GENERATE} --api bwd --optdim=${ckOptDim} --receipt 4 --filter "*psdv*@*psd*@*_pd1dv1*_ntrload*" --output_dir \${CMAKE_CURRENT_LIST_DIR}
-  RESULT_VARIABLE ret
-)
-
-if(ret AND NOT ret EQUAL 0)
-  message( FATAL_ERROR "CK Tile FMHA FAILED to generate BWD kernels.")
-endif()
-
-`,
-      after: bwdOmit,
-    },
-    ...common.slice(5),
-    // local：inference-only 省略 bwd make_kernel_pt 步骤
-    {
-      name: "ck-make-kernel-pt-bwd-omit",
-      before: `# Change make_kernel to make_kernel_pt for bwd
-execute_process(
-  COMMAND bash -c "\${CMAKE_CURRENT_LIST_DIR}/add_make_kernel_pt.sh \${CMAKE_CURRENT_LIST_DIR}/bwd_blob_list.txt"
-  RESULT_VARIABLE ret)
-
-if(ret AND NOT ret EQUAL 0)
-  message( FATAL_ERROR "CK Tile FMHA FAILED to change make_kernel to make_kernel_pt for the bwd pass")
-endif()
-
-`,
-      after: bwdOmit,
     },
   ];
 }
 
 /**
- * inference-only 时 `aten/src/ATen/CMakeLists.txt` 的 CK SDPA 相关 patch。
- *
- * local：lock `CK_FMHA_DISABLE_BWD=1` 时跳过 fav_v3/bwd blob、定义 FLASHATTENTION_DISABLE_BACKWARD。
- * 上游 #143695 默认仍编译完整 bwd 与 fav_v3（MI3xx ASM）。
+ * lock `GPU_ARCHS` 不含 MI3xx（gfx942/gfx950）时跳过 fav_v3 与 AITER embedded HSA。
+ * CK Tile fwd/bwd codegen 与 mha_bwd_ck.hip 仍完整保留（与 inference-only 不同，不排除 fmha_bwd）。
  */
-function buildInferenceOnlyAtenPoints(): PatchPoint[] {
+function buildSkipFavV3AtenPoints(): PatchPoint[] {
   return [
-    // local：inference-only 定义 FLASHATTENTION_DISABLE_BACKWARD（上游 #143695 bwd 仍编译）
-    {
-      name: "aten-ck-sdpa-disable-backward-def",
-      before: `        __GCC_HAVE_DWARF2_CFI_ASM=1
-        USE_ROCM_CK_SDPA)`,
-      after: `        __GCC_HAVE_DWARF2_CFI_ASM=1
-        FLASHATTENTION_DISABLE_BACKWARD
-        USE_ROCM_CK_SDPA)`,
-    },
-    // local：inference-only 跳过 fav_v3（MI3xx ASM bwd，#143695 fav_v3 子目录）
     {
       name: "aten-ck-sdpa-skip-fav-v3",
       before: `    add_subdirectory(native/transformers/hip/flash_attn/ck)
@@ -375,12 +313,10 @@ function buildInferenceOnlyAtenPoints(): PatchPoint[] {
          "native/transformers/hip/flash_attn/ck/*.hip"
          "native/transformers/hip/flash_attn/ck/fav_v3/*.hip")`,
       after: `    add_subdirectory(native/transformers/hip/flash_attn/ck)
-    # FAv3 Generation skipped (inference-only CK FMHA build; MI3xx ASM bwd)
+    # FAv3 Generation skipped (lock GPU_ARCHS has no MI3xx gfx942/gfx950)
     file(GLOB ck_sdpa_sources_hip CONFIGURE_DEPENDS
-         "native/transformers/hip/flash_attn/ck/*.hip")
-    list(FILTER ck_sdpa_sources_hip EXCLUDE REGEX "fmha_bwd")`,
+         "native/transformers/hip/flash_attn/ck/*.hip")`,
     },
-    // local：inference-only 移除 AITER_EMBEDDED_HSA_HEADER（无 fav_v3 嵌入 HSA）
     {
       name: "aten-ck-sdpa-omit-aiter-hsa-header",
       before: `    target_compile_definitions(ck_sdpa PUBLIC \${CK_SDPA_EXTRA_HIPCC_OPTIONS})
@@ -407,363 +343,24 @@ function buildInferenceOnlyAtenPoints(): PatchPoint[] {
   ];
 }
 
-const BWD_DISABLED_MSG =
-  "This flash attention build does not support backward.";
-
-/**
- * inference-only 时对 `mha_bwd_ck.hip` 的就地 stub patch。
- *
- * local：用 `#if 0` 包裹 bwd helper/函数体，入口保留 TORCH_CHECK。
- * helper `#endif` 前关闭 namespace 并在 stub 函数前重新打开，避免 v2.13.0 出现 extraneous `}`。
- * 兼容 v2.13.0（已有 FLASHATTENTION_DISABLE_BACKWARD guard）与更早 upstream 布局。
- * 上游 bwd 实现来自 #143695。
- */
-function buildMhaBwdCkStubPoints(): PatchPoint[] {
-  const omitFunctionBodyBefore = [
-    `#ifdef FLASHATTENTION_DISABLE_BACKWARD
-    TORCH_CHECK(false, "This flash attention build does not support backward.");
-#endif
-    if (is_causal) { window_size_right = 0; }
-
-    bool is_dropout = p_dropout > 0.0;
-    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
-    `#endif
-    if (is_causal) { window_size_right = 0; }
-
-    bool is_dropout = p_dropout > 0.0;
-    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
-  ];
-  const omitFunctionBodyAfter = [
-    `    TORCH_CHECK(false, "${BWD_DISABLED_MSG}");
-#if 0 // upstream CK FMHA bwd body omitted (CK_FMHA_DISABLE_BWD=1)
-    if (is_causal) { window_size_right = 0; }
-
-    bool is_dropout = p_dropout > 0.0;
-    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
-    `#endif
-    TORCH_CHECK(false, "${BWD_DISABLED_MSG}");
-#if 0 // upstream CK FMHA bwd body omitted (CK_FMHA_DISABLE_BWD=1)
-    if (is_causal) { window_size_right = 0; }
-
-    bool is_dropout = p_dropout > 0.0;
-    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
-  ];
-  const reopenNamespaceBeforeMhaBwdCk = `
-namespace pytorch_flash {
-
-std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
-mha_bwd_ck(const at::Tensor &dout,                   // batch_size x seqlen_q x num_heads, x head_size_og`;
-
-  return [
-    // local：inference-only 用 #if 0 包裹 bwd helper（上游 #143695 mha_bwd_ck.hip）
-    {
-      name: "mha-bwd-ck-omit-helper-preamble",
-      before: [
-        `#include <mha_bwd.h>
-#include <fmha_bwd.hpp>
-#include <mask.hpp>
-
-#include <type_traits>
-
-namespace pytorch_flash {
-
-// SFINAE for newer composable_kernel \`fmha_bwd.hpp\` vs older CK (see mha_fwd_ck.hip).`,
-        `#include <mha_bwd.h>
-#include <fmha_bwd.hpp>
-#include <mask.hpp>
-
-namespace pytorch_flash {
-
-aiter::mha_bwd_args get_ck_fmha_bwd_args`,
-      ],
-      after: [
-        `#if 0 // CK FMHA bwd helpers omitted (CK_FMHA_DISABLE_BWD=1)
-#include <mha_bwd.h>
-#include <fmha_bwd.hpp>
-#include <mask.hpp>
-
-#include <type_traits>
-
-namespace pytorch_flash {
-
-// SFINAE for newer composable_kernel \`fmha_bwd.hpp\` vs older CK (see mha_fwd_ck.hip).`,
-        `#if 0 // CK FMHA bwd helpers omitted (CK_FMHA_DISABLE_BWD=1)
-#include <mha_bwd.h>
-#include <fmha_bwd.hpp>
-#include <mask.hpp>
-
-namespace pytorch_flash {
-
-aiter::mha_bwd_args get_ck_fmha_bwd_args`,
-      ],
-    },
-    // local：inference-only 关闭 bwd helper #if 0 块
-    {
-      name: "mha-bwd-ck-close-helper-if0",
-      before: [
-        `    args.drop_seed_offset       = drop_seed_offset;
-    return args;
-}
-
-std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
-mha_bwd_ck(const at::Tensor &dout,                   // batch_size x seqlen_q x num_heads, x head_size_og`,
-        `        drop_seed_offset
-    };
-}
-
-std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
-mha_bwd_ck(const at::Tensor &dout,                   // batch_size x seqlen_q x num_heads, x head_size_og`,
-      ],
-      after: [
-        `    args.drop_seed_offset       = drop_seed_offset;
-    return args;
-}
-} // namespace pytorch_flash
-#endif${reopenNamespaceBeforeMhaBwdCk}`,
-        `        drop_seed_offset
-    };
-}
-} // namespace pytorch_flash
-#endif${reopenNamespaceBeforeMhaBwdCk}`,
-      ],
-    },
-    // local：inference-only stub mha_bwd_ck 函数体（v2.13.0 已有 FLASHATTENTION_DISABLE_BACKWARD guard）
-    {
-      name: "mha-bwd-ck-omit-function-body",
-      before: omitFunctionBodyBefore,
-      after: omitFunctionBodyAfter,
-    },
-    // local：inference-only 关闭 mha_bwd_ck 函数体 #if 0
-    {
-      name: "mha-bwd-ck-close-function-body-if0",
-      before: `    return { dq, dk, dv, softmax_d, dbias };
-}
-} // namespace pytorch_flash`,
-      after: `    return { dq, dk, dv, softmax_d, dbias };
-#endif
-}
-} // namespace pytorch_flash`,
-    },
-  ];
-}
-
-/**
- * inference-only 时对 `mha_varlen_bwd_ck.hip` 的就地 stub patch。
- *
- * 逻辑同 {@link buildMhaBwdCkStubPoints}，适配 varlen bwd 上游布局差异（#143695）。
- */
-function buildMhaVarlenBwdCkStubPoints(): PatchPoint[] {
-  const omitFunctionBodyBefore = [
-    `#ifdef FLASHATTENTION_DISABLE_BACKWARD
-    TORCH_CHECK(false, "This flash attention build does not support backward.");
-#endif
-    if (is_causal) { window_size_right = 0; }
-
-    bool is_dropout = p_dropout > 0.0;
-    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
-    `#endif
-    if (is_causal) { window_size_right = 0; }
-
-    bool is_dropout = p_dropout > 0.0;
-    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
-  ];
-  const omitFunctionBodyAfter = [
-    `    TORCH_CHECK(false, "${BWD_DISABLED_MSG}");
-#if 0 // upstream CK FMHA bwd body omitted (CK_FMHA_DISABLE_BWD=1)
-    if (is_causal) { window_size_right = 0; }
-
-    bool is_dropout = p_dropout > 0.0;
-    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
-    `#endif
-    TORCH_CHECK(false, "${BWD_DISABLED_MSG}");
-#if 0 // upstream CK FMHA bwd body omitted (CK_FMHA_DISABLE_BWD=1)
-    if (is_causal) { window_size_right = 0; }
-
-    bool is_dropout = p_dropout > 0.0;
-    auto stream = at::cuda::getCurrentCUDAStream().stream();`,
-  ];
-  const reopenNamespaceBeforeMhaVarlenBwdCk = `
-namespace pytorch_flash {
-
-std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
-mha_varlen_bwd_ck(const at::Tensor &dout,                   // total_q x num_heads x head_size`;
-
-  return [
-    // local：inference-only 用 #if 0 包裹 varlen bwd helper（上游 #143695 mha_varlen_bwd_ck.hip）
-    {
-      name: "mha-varlen-bwd-ck-omit-helper-preamble",
-      before: [
-        `#include <fmha_bwd.hpp>
-#include <mask.hpp>
-
-#include <type_traits>
-
-namespace pytorch_flash {
-
-// SFINAE for newer composable_kernel \`fmha_bwd.hpp\` layout vs older CK revisions.`,
-        `#include <fmha_bwd.hpp>
-#include <mask.hpp>
-
-
-namespace pytorch_flash {
-
-
-fmha_bwd_traits get_ck_fmha_varlen_bwd_traits`,
-      ],
-      after: [
-        `#if 0 // CK FMHA bwd helpers omitted (CK_FMHA_DISABLE_BWD=1)
-#include <fmha_bwd.hpp>
-#include <mask.hpp>
-
-#include <type_traits>
-
-namespace pytorch_flash {
-
-// SFINAE for newer composable_kernel \`fmha_bwd.hpp\` layout vs older CK revisions.`,
-        `#if 0 // CK FMHA bwd helpers omitted (CK_FMHA_DISABLE_BWD=1)
-#include <fmha_bwd.hpp>
-#include <mask.hpp>
-
-
-namespace pytorch_flash {
-
-
-fmha_bwd_traits get_ck_fmha_varlen_bwd_traits`,
-      ],
-    },
-    // local：inference-only 关闭 varlen bwd helper #if 0 块
-    {
-      name: "mha-varlen-bwd-ck-close-helper-if0",
-      before: [
-        `    args.drop_seed_offset        = drop_seed_offset;
-    return args;
-}
-
-std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
-mha_varlen_bwd_ck(const at::Tensor &dout,                   // total_q x num_heads x head_size`,
-        `                         drop_seed_offset};
-}
-
-std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
-mha_varlen_bwd_ck(const at::Tensor &dout,                   // total_q x num_heads x head_size`,
-      ],
-      after: [
-        `    args.drop_seed_offset        = drop_seed_offset;
-    return args;
-}
-} // namespace pytorch_flash
-#endif${reopenNamespaceBeforeMhaVarlenBwdCk}`,
-        `                         drop_seed_offset};
-}
-} // namespace pytorch_flash
-#endif${reopenNamespaceBeforeMhaVarlenBwdCk}`,
-      ],
-    },
-    // local：inference-only stub mha_varlen_bwd_ck 函数体
-    {
-      name: "mha-varlen-bwd-ck-omit-function-body",
-      before: omitFunctionBodyBefore,
-      after: omitFunctionBodyAfter,
-    },
-    // local：inference-only 关闭 mha_varlen_bwd_ck 函数体 #if 0
-    {
-      name: "mha-varlen-bwd-ck-close-function-body-if0",
-      before: `    return { dq, dk, dv, softmax_d, dbias };
-}
-} // namespace pytorch_flash`,
-      after: `    return { dq, dk, dv, softmax_d, dbias };
-#endif
-}
-} // namespace pytorch_flash`,
-    },
-  ];
-}
-
-/**
- * inference-only 时对 `me_bwd_ck.hip` 的就地 stub patch。
- *
- * local：memory-efficient bwd 包装层直接 TORCH_CHECK，不调用 mha_bwd_ck（#143695）。
- */
-function buildMeBwdCkStubPoints(): PatchPoint[] {
-  return [
-    // local：inference-only stub me_bwd_ck 函数体（上游 #143695 me_bwd_ck.hip）
-    {
-      name: "me-bwd-ck-omit-function-body",
-      before: `{
-
-  const int non_null_window_left  = -1;
-  const int non_null_window_right = -1;
-
-  std::optional<at::Tensor> opt_dQ, opt_dK, opt_dV;
-  opt_dQ = dq_;
-  opt_dK = dk_;
-  opt_dV = dv_;
-
-  if(!cu_seqlens_q.has_value()) {
-    auto
-      [dQ,
-       dK,
-       dV,
-       softmax_d,
-       dBias] =
-        mha_bwd_ck(`,
-      after: `{
-  TORCH_CHECK(false, "${BWD_DISABLED_MSG}");
-#if 0 // upstream CK FMHA bwd body omitted (CK_FMHA_DISABLE_BWD=1)
-
-  const int non_null_window_left  = -1;
-  const int non_null_window_right = -1;
-
-  std::optional<at::Tensor> opt_dQ, opt_dK, opt_dV;
-  opt_dQ = dq_;
-  opt_dK = dk_;
-  opt_dV = dv_;
-
-  if(!cu_seqlens_q.has_value()) {
-    auto
-      [dQ,
-       dK,
-       dV,
-       softmax_d,
-       dBias] =
-        mha_bwd_ck(`,
-    },
-    // local：inference-only 关闭 me_bwd_ck 函数体 #if 0
-    {
-      name: "me-bwd-ck-close-function-body-if0",
-      before: `  return std::make_tuple(at::Tensor{}, at::Tensor{}, at::Tensor{}, at::Tensor{});
-}
-
-} // namespace pytorch_flash
-#endif // USE_ROCM_CK_SDPA`,
-      after: `  return std::make_tuple(at::Tensor{}, at::Tensor{}, at::Tensor{}, at::Tensor{});
-#endif
-}
-
-} // namespace pytorch_flash
-#endif // USE_ROCM_CK_SDPA`,
-    },
-  ];
-}
-
 /**
  * 对 clone 后的 PyTorch 源码应用 gfx120x CK SDPA 全部 patch。
  *
  * 补丁分组：
- * 1. 根 CMakeLists.txt — 启用 Windows CK SDPA（撤销 #182733）、MSVC /Brepro（local）
- * 2. Context.cpp / launch_kernel_pt.hpp — #188114 gfx120x 架构支持
- * 3. ck/CMakeLists.txt — Windows codegen 适配 + CK_TARGETS（buildCkCmakePoints）
- * 4. aten/CMakeLists.txt — #188114 arch whitelist；可选 inference-only（buildInferenceOnlyAtenPoints）
- * 5. bwd *.hip — 可选 inference-only stub（buildMha* / buildMeBwdCkStubPoints）
- * 6. cmake/External/aotriton.cmake — 注入 CMAKE_SUPPRESS_REGENERATION=ON、AOTriton clang-cl PATCH（local）
- * 7. hip/flash_attn/flash_api.h — 移除 mha_fwd_ck 声明的 TORCH_API（local，Windows dllimport）
+ * 1. 根 CMakeLists.txt — 启用 Windows CK SDPA（撤销 #182733）、MSVC /Brepro 与 clang-cl 警告抑制（local）
+ * 2. cmake/External/aotriton.cmake — 外部依赖 UPDATE_DISCONNECTED、CMAKE_SUPPRESS_REGENERATION 与编译选项注入（local）
+ * 3. Context.cpp / launch_kernel_pt.hpp — #188114 gfx120x 架构支持
+ * 4. hip/flash_attn/flash_api.h — 移除 mha_fwd_ck 声明的 TORCH_API（local，Windows dllimport）
+ * 5. ck/CMakeLists.txt — Windows codegen 适配 + CK_TARGETS（buildCkCmakePoints）
+ * 6. aten/CMakeLists.txt — #188114 arch whitelist；无 MI3xx 时 skip fav_v3（buildSkipFavV3AtenPoints）
  */
 export function runPatch(options: { ptSrc: string }): void {
   const root = path.resolve(options.ptSrc);
   const ckTargets = requireLockEnv("CK_TARGETS");
   const ckOptDim = requireLockEnv("CK_OPT_DIM");
-  const disableBwd = ckFmhaDisableBwd();
-  const gpuArchList = parseGpuArchList(requireLockEnv("GPU_ARCHS"));
+  const gpuArchsEnv = requireLockEnv("GPU_ARCHS");
+  const gpuArchList = parseGpuArchList(gpuArchsEnv);
+  const includeFavV3 = gpuArchListIncludesMi3xxForFavV3(gpuArchsEnv);
   const gpuArchCpp = formatGpuArchCppStrings(gpuArchList);
   const gpuArchDefines = formatGpuArchCppDefines(gpuArchList);
   const gpuArchCmake = formatGpuArchCmakeList(gpuArchList);
@@ -937,7 +534,7 @@ std::tuple<`,
   console.log(`  OK ck-add-make-kernel-pt-py: copied to ${addMakeKernelPtDst}`);
 
   const ckCmake = path.join(ckDir, "CMakeLists.txt");
-  applyPoints(ckCmake, buildCkCmakePoints(ckTargets, ckOptDim, disableBwd));
+  applyPoints(ckCmake, buildCkCmakePoints(ckTargets, ckOptDim));
 
   const atenCmake = path.join(root, "aten/src/ATen/CMakeLists.txt");
   const atenPoints: PatchPoint[] = [
@@ -960,19 +557,15 @@ std::tuple<`,
         list(APPEND _ck_sdpa_hip_arches \${ARCH})`,
     },
   ];
-  if (disableBwd) {
-    // local：CK_FMHA_DISABLE_BWD=1 时追加 inference-only aten/bwd stub 补丁
-    atenPoints.push(...buildInferenceOnlyAtenPoints());
-    applyPoints(path.join(ckDir, "mha_bwd_ck.hip"), buildMhaBwdCkStubPoints());
-    applyPoints(
-      path.join(ckDir, "mha_varlen_bwd_ck.hip"),
-      buildMhaVarlenBwdCkStubPoints(),
-    );
-    applyPoints(path.join(ckDir, "me_bwd_ck.hip"), buildMeBwdCkStubPoints());
+  if (!includeFavV3) {
+    atenPoints.push(...buildSkipFavV3AtenPoints());
   }
   applyPoints(atenCmake, atenPoints);
 
+  const favV3Status = includeFavV3
+    ? "enabled (MI3xx in GPU_ARCHS)"
+    : "skipped (no gfx942/gfx950 in GPU_ARCHS)";
   console.log(
-    `Patched pytorch source at ${root} for gfx120x CK SDPA (GPU_ARCHS=${gpuArchCmake}, CK_TARGETS=${ckTargets}, CK_FMHA_DISABLE_BWD=${disableBwd ? "1" : "0"})`,
+    `Patched pytorch source at ${root} for gfx120x CK SDPA (GPU_ARCHS=${gpuArchCmake}, CK_TARGETS=${ckTargets}, fav_v3=${favV3Status})`,
   );
 }

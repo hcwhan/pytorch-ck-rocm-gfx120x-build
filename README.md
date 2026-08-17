@@ -23,7 +23,7 @@
 |------|------|------|
 | `toolchain` | `python`、`rocm_index`、`rocm` | pip 工具链 pin（**不安装预编译 torch**） |
 | `pytorch` | `repo`、`build_commit`、`build_commit_date` | 每次构建精确 clone 的 PyTorch 源码（`build_commit` 可为 40 位 SHA 或 tag，如 `v2.13.0`）；**升级 PyTorch 时改 `build_commit` 与 `build_commit_date`** |
-| `compile` | `gpu_archs`、`ck_opt_dim`、`ck_disable_bwd` | `PYTORCH_ROCM_ARCH`（**唯一架构源**）、CK FMHA `opt_dim` 档位；`ck_disable_bwd=true` 为推理专用（env `CK_FMHA_DISABLE_BWD=1`，跳过 bwd codegen） |
+| `compile` | `gpu_archs`、`ck_opt_dim` | `PYTORCH_ROCM_ARCH`（**唯一架构源**）、CK FMHA `opt_dim` 档位 |
 | `wheel` | `wheel_local_version` | wheel 的 `+local` 标签（env `WHEEL_LOCAL_VERSION`） |
 | `wheel` | `wheel_artifact_name` | GitHub Actions artifact 名称 |
 | `release` | `release_tag_prefix` | Release tag 前缀（`{prefix}-serial-build{run_number}`） |
@@ -47,8 +47,21 @@
 - **`PYTORCH_ROCM_ARCH`** = lock `compile.gpu_archs`（Windows 分号分隔）
 - **`CK_TARGETS`** = 由 `compile.gpu_archs` 推导（当前 `gfx1200;gfx1201` → `--targets gfx12`）
 - CK FMHA **`ck_opt_dim`** = lock `compile.ck_opt_dim`（当前 `32,64,128,256`）
-- **`ck_disable_bwd=true`**（推理专用 wheel）：跳过 bwd codegen / fav_v3；调用 backward 会在运行时 `TORCH_CHECK` 失败
+- **完整编译 CK Tile FMHA**（forward + backward）；**fav_v3**（MI3xx AITER ASM bwd）仅 lock `gpu_archs` 含 **gfx942/gfx950** 时编入（当前 `gfx1200;gfx1201` 跳过）
 - wheel local tag：`ck-rocm7.14.0-gfx120x`（见 `wheel.wheel_local_version`）
+
+### 与 inference-only 的差异（full bwd）
+
+当前 lock 默认 **完整 fwd + bwd**（已移除 `compile.ck_disable_bwd`）。相较此前 inference-only wheel（如 serial-build100，约 **302 MiB** / `316798971` bytes，仅 CK fwd）：
+
+| 项 | inference-only（旧） | full bwd（当前） |
+|----|---------------------|------------------|
+| CK codegen | 仅 fwd / fwd_splitkv / fwd_appendkv | 额外 bwd list + emit + blob |
+| wheel 体积 | 参考 ~302 MiB（build100） | 预期更大（bwd kernel 编入 `torch_hip.dll` 等；首次 full-bwd CI 后可在 Release manifest 核对 `size_bytes`） |
+| CI 全量编译 | 参考 build100 量级 | 预期显著增加（额外 bwd ninja targets + codegen 步骤；cold compile 可能触发 5h 看门狗 retry） |
+| ComfyUI 扩散推理 | 仅需 fwd，旧 wheel 可用 | 默认 full wheel 可直接用；体积更大但支持 training / backward 场景 |
+
+> fav_v3（MI3xx AITER ASM）仍仅在 lock 含 gfx942/gfx950 时编入；当前 gfx120x lock 跳过 fav_v3。
 
 ## 触发方式
 
@@ -74,7 +87,7 @@
 
 **Worktree cache**（整棵 `C:\pt\pytorch`：patch 后源码 + hipify + `build/`）：
 
-- Key：`worktree-v2-lock[{lockHash8}]-lockWheel[{lockWheelHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`
+- Key：`worktree-v3-lock[{lockHash8}]-lockWheel[{lockWheelHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`
 - `lockHash8`：lock `toolchain` + `pytorch` + `compile` → SHA256 前 8 位
 - `lockWheelHash8`：lock `wheel` → SHA256 前 8 位
 - `patchHash8`：`scripts/commands/04.patch.ts`、`scripts/commands/05.hipify.ts`、`scripts/lib/gpu-archs.ts`、`build/add-make-kernel-pt.py` → SHA256 前 8 位
@@ -87,7 +100,7 @@
 - **save**：`use_cache=true` 时 compile 非 skipped 即 save；`use_cache=false` 时仅成功 save
 - **miss / verify 失败**：prep → patch → hipify → compile → save
 
-另有独立 **pip toolchain cache**（`PIP_TOOLCHAIN_CACHE_KEY`：`pt-pip-toolchain-v2-py[{python}]-rocm[{rocm}]-idx[{indexHash8}]`，`indexHash8` = lock `toolchain.rocm_index` → SHA256 前 8 位）与 **ccache**（`CCACHE_CACHE_KEY`：`ccache-v2-lock[{lockHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`，无 `lockWheel`）分层。
+另有独立 **pip toolchain cache**（`PIP_TOOLCHAIN_CACHE_KEY`：`pt-pip-toolchain-v2-py[{python}]-rocm[{rocm}]-idx[{indexHash8}]`，`indexHash8` = lock `toolchain.rocm_index` → SHA256 前 8 位）与 **ccache**（`CCACHE_CACHE_KEY`：`ccache-v3-lock[{lockHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`，无 `lockWheel`）分层。
 
 ### 构建阶段
 
@@ -134,7 +147,7 @@ torch-*+ck.rocm7.14.0.gfx120x*-cp312-cp312-win_amd64.whl
 | CI smoke test（CPU） | `npx tsx scripts/cli.ts 10.verify --dist-dir dist --build-caches dist\build-caches.json` |
 | 部署前 GPU smoke test（gfx120x 真机） | `python test/gpu-smoke-test.py -w .` |
 
-Smoke test（`10.verify`，CPU）：wheel 文件名/结构（含 CK fwd dim 符号；`ck_disable_bwd=1` 时 bwd 负向断言）→ SHA256 / manifest → pip 安装 → 校验 `torch.backends.cuda.is_ck_sdpa_available()`。GPU 上跑 CK SDPA 见 `test/gpu-smoke-test.py`（**先 pip install wheel**，部署前在 gfx120x 真机手动跑；不替代 `10.verify`）。
+Smoke test（`10.verify`，CPU）：wheel 文件名/结构（含 CK fwd/bwd dim 符号）→ SHA256 / manifest → pip 安装 → 校验 `torch.backends.cuda.is_ck_sdpa_available()`。GPU 上跑 CK SDPA fwd/bwd 见 `test/gpu-smoke-test.py`（**先 pip install wheel**，部署前在 gfx120x 真机手动跑；不替代 `10.verify`；在 `TORCH_ROCM_FA_PREFER_CK=1` 下以 `sdpa_kernel(SDPBackend.FLASH_ATTENTION)` 限定 backend，确认 fwd/bwd 均走 CK 而非 math fallback）。
 
 ## 安装到 ComfyUI
 
@@ -145,7 +158,7 @@ $PY = "<ComfyUI>\python_embeded\python.exe"
 
 替换 `python_embeded` 中的 torch 后：
 
-- 当前 wheel 为 **推理专用**（lock `ck_disable_bwd=true`）；不含 CK FMHA backward
+- 当前 wheel 为 **完整 CK Tile FMHA**（forward + backward）；不含 fav_v3（lock 无 MI3xx arch）
 - 启动参数保持 **`--use-pytorch-cross-attention`**
 - 环境变量 **`TORCH_ROCM_FA_PREFER_CK=1`**（或运行时 `torch.backends.cuda.preferred_rocm_fa_library("ck")`）
 

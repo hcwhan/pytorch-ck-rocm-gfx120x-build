@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 import torch
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
 
 def load_lock(workspace_root: Path) -> dict:
@@ -34,9 +35,107 @@ def parse_gpu_archs(gpu_archs: str) -> list[str]:
     return parts
 
 
+def enable_ck_preference() -> None:
+    os.environ["TORCH_ROCM_FA_PREFER_CK"] = "1"
+    if hasattr(torch.backends.cuda, "preferred_rocm_fa_library"):
+        torch.backends.cuda.preferred_rocm_fa_library("ck")
+
+
+def probe_ck_sdpa_fwd(
+    device: torch.device,
+    batch: int,
+    seqlen: int,
+    nheads: int,
+    headdim: int,
+) -> torch.Tensor:
+    q = torch.randn(
+        batch, nheads, seqlen, headdim, device=device, dtype=torch.float16
+    )
+    k = torch.randn(
+        batch, nheads, seqlen, headdim, device=device, dtype=torch.float16
+    )
+    v = torch.randn(
+        batch, nheads, seqlen, headdim, device=device, dtype=torch.float16
+    )
+    try:
+        with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+            out = torch.nn.functional.scaled_dot_product_attention(
+                q, k, v, is_causal=True
+            )
+        torch.cuda.synchronize()
+    except RuntimeError as exc:
+        torch.cuda.synchronize()
+        raise SystemExit(
+            "ERROR: headdim="
+            f"{headdim} CK SDPA forward failed under FLASH_ATTENTION-only "
+            f"(TORCH_ROCM_FA_PREFER_CK=1): {exc}"
+        ) from exc
+    return out
+
+
+def probe_ck_sdpa_bwd(
+    device: torch.device,
+    batch: int,
+    seqlen: int,
+    nheads: int,
+    headdim: int,
+) -> None:
+    q = torch.randn(
+        batch,
+        nheads,
+        seqlen,
+        headdim,
+        device=device,
+        dtype=torch.float16,
+        requires_grad=True,
+    )
+    k = torch.randn(
+        batch,
+        nheads,
+        seqlen,
+        headdim,
+        device=device,
+        dtype=torch.float16,
+        requires_grad=True,
+    )
+    v = torch.randn(
+        batch,
+        nheads,
+        seqlen,
+        headdim,
+        device=device,
+        dtype=torch.float16,
+        requires_grad=True,
+    )
+    try:
+        with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+            out = torch.nn.functional.scaled_dot_product_attention(
+                q, k, v, is_causal=True
+            )
+            out.sum().backward()
+        torch.cuda.synchronize()
+    except RuntimeError as exc:
+        torch.cuda.synchronize()
+        raise SystemExit(
+            "ERROR: headdim="
+            f"{headdim} CK SDPA backward failed under FLASH_ATTENTION-only "
+            f"(TORCH_ROCM_FA_PREFER_CK=1): {exc}"
+        ) from exc
+
+    if q.grad is None or k.grad is None or v.grad is None:
+        raise SystemExit(
+            f"ERROR: headdim={headdim} backward produced no gradients for q/k/v"
+        )
+    for name, grad in (("q", q.grad), ("k", k.grad), ("v", v.grad)):
+        if not torch.isfinite(grad).all():
+            raise SystemExit(
+                f"ERROR: headdim={headdim} {name}.grad has non-finite values"
+            )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="已安装 torch wheel 的 GPU CK SDPA 前向冒烟测试（需先 pip install wheel）",
+        description="已安装 torch wheel 的 GPU CK SDPA fwd/bwd 冒烟测试（需先 pip install wheel）",
     )
     parser.add_argument(
         "-w",
@@ -70,9 +169,7 @@ def main() -> None:
     if not torch.backends.cuda.is_ck_sdpa_available():
         raise SystemExit("ERROR: torch.backends.cuda.is_ck_sdpa_available() is False")
 
-    os.environ["TORCH_ROCM_FA_PREFER_CK"] = "1"
-    if hasattr(torch.backends.cuda, "preferred_rocm_fa_library"):
-        torch.backends.cuda.preferred_rocm_fa_library("ck")
+    enable_ck_preference()
 
     device = torch.device("cuda")
     props = torch.cuda.get_device_properties(0)
@@ -89,19 +186,9 @@ def main() -> None:
 
     batch, seqlen, nheads = 1, 64, 4
     for headdim in head_dims:
-        q = torch.randn(
-            batch, nheads, seqlen, headdim, device=device, dtype=torch.float16
-        )
-        k = torch.randn(
-            batch, nheads, seqlen, headdim, device=device, dtype=torch.float16
-        )
-        v = torch.randn(
-            batch, nheads, seqlen, headdim, device=device, dtype=torch.float16
-        )
-        out = torch.nn.functional.scaled_dot_product_attention(
-            q, k, v, is_causal=True
-        )
-        if out.shape != q.shape:
+        out = probe_ck_sdpa_fwd(device, batch, seqlen, nheads, headdim)
+        expected_shape = (batch, nheads, seqlen, headdim)
+        if out.shape != expected_shape:
             raise SystemExit(
                 f"ERROR: headdim={headdim} unexpected output shape {out.shape}"
             )
@@ -109,8 +196,17 @@ def main() -> None:
             raise SystemExit(
                 f"ERROR: headdim={headdim} output has non-finite values"
             )
-        torch.cuda.synchronize()
-        print(f"GPU CK SDPA OK headdim={headdim} shape={tuple(out.shape)}")
+        print(
+            "GPU CK SDPA forward OK headdim="
+            f"{headdim} shape={tuple(out.shape)} backend=FLASH_ATTENTION"
+        )
+
+    for headdim in head_dims:
+        probe_ck_sdpa_bwd(device, batch, seqlen, nheads, headdim)
+        print(
+            "GPU CK SDPA backward OK headdim="
+            f"{headdim} backend=FLASH_ATTENTION"
+        )
 
     print("GPU smoke test complete")
 

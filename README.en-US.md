@@ -23,7 +23,7 @@ Toolchain versions are pinned in **`VERSION.lock.json`** and loaded via `npx tsx
 |---------|-------|------|
 | `toolchain` | `python`, `rocm_index`, `rocm` | pip toolchain pins (**no prebuilt torch install**) |
 | `pytorch` | `repo`, `build_commit`, `build_commit_date` | Exact PyTorch source cloned each build (`build_commit` may be a 40-char SHA or tag such as `v2.13.0`); **bump `build_commit` and `build_commit_date` when upgrading PyTorch** |
-| `compile` | `gpu_archs`, `ck_opt_dim`, `ck_disable_bwd` | `PYTORCH_ROCM_ARCH` (**single arch source**), CK FMHA `opt_dim` tiers; `ck_disable_bwd=true` = inference-only (env `CK_FMHA_DISABLE_BWD=1`, skips bwd codegen) |
+| `compile` | `gpu_archs`, `ck_opt_dim` | `PYTORCH_ROCM_ARCH` (**single arch source**), CK FMHA `opt_dim` tiers |
 | `wheel` | `wheel_local_version` | Wheel `+local` tag (env `WHEEL_LOCAL_VERSION`) |
 | `wheel` | `wheel_artifact_name` | GitHub Actions artifact name |
 | `release` | `release_tag_prefix` | Release tag prefix (`{prefix}-serial-build{run_number}`) |
@@ -47,8 +47,21 @@ Prep clones **`pytorch.build_commit`** (SHA or tag; `fetch origin <ref>` + `chec
 - **`PYTORCH_ROCM_ARCH`** = lock `compile.gpu_archs` (semicolon-separated on Windows)
 - **`CK_TARGETS`** = derived from `compile.gpu_archs` (currently `gfx1200;gfx1201` → `--targets gfx12`)
 - CK FMHA **`ck_opt_dim`** = lock `compile.ck_opt_dim` (currently `32,64,128,256`)
-- **`ck_disable_bwd=true`** (inference-only wheel): skips bwd codegen / fav_v3; calling backward fails at runtime via `TORCH_CHECK`
+- **Full CK Tile FMHA build** (forward + backward); **fav_v3** (MI3xx AITER ASM bwd) is included only when lock `gpu_archs` contains **gfx942/gfx950** (skipped for current `gfx1200;gfx1201`)
 - Wheel local tag: `ck-rocm7.14.0-gfx120x` (see `wheel.wheel_local_version`)
+
+### vs inference-only (full bwd)
+
+The lock now defaults to **full fwd + bwd** (`compile.ck_disable_bwd` removed). Compared to the previous inference-only wheel (e.g. serial-build100, ~**302 MiB** / `316798971` bytes, CK fwd only):
+
+| Item | inference-only (old) | full bwd (current) |
+|------|----------------------|--------------------|
+| CK codegen | fwd / fwd_splitkv / fwd_appendkv only | adds bwd list + emit + blob steps |
+| Wheel size | ~302 MiB reference (build100) | expected larger (bwd kernels in `torch_hip.dll`, etc.; check Release manifest `size_bytes` after first full-bwd CI) |
+| CI full compile | build100 scale | expected significantly longer (extra bwd ninja targets + codegen; cold compile may hit the 5h watchdog retry) |
+| ComfyUI diffusion | fwd only; old wheel sufficient | default full wheel works as-is; larger but supports training / backward |
+
+> fav_v3 (MI3xx AITER ASM) is still omitted unless lock includes gfx942/gfx950; current gfx120x lock skips fav_v3.
 
 ## Trigger
 
@@ -74,7 +87,7 @@ Push to `main` does **not** auto-trigger builds.
 
 **Worktree cache** (entire `C:\pt\pytorch`: patched source + hipify + `build/`):
 
-- Key: `worktree-v2-lock[{lockHash8}]-lockWheel[{lockWheelHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`
+- Key: `worktree-v3-lock[{lockHash8}]-lockWheel[{lockWheelHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`
 - `lockHash8`: lock `toolchain` + `pytorch` + `compile` → SHA256 prefix (8 hex chars)
 - `lockWheelHash8`: lock `wheel` → SHA256 prefix (8 hex chars)
 - `patchHash8`: `scripts/commands/04.patch.ts`, `scripts/commands/05.hipify.ts`, `scripts/lib/gpu-archs.ts`, `build/add-make-kernel-pt.py` → SHA256 prefix (8 hex chars)
@@ -87,7 +100,7 @@ Push to `main` does **not** auto-trigger builds.
 - **save**: `use_cache=true` saves after compile (not skipped); `use_cache=false` saves only on success
 - **miss / verify fail**: prep → patch → hipify → compile → save
 
-A separate **pip toolchain cache** (`PIP_TOOLCHAIN_CACHE_KEY`: `pt-pip-toolchain-v2-py[{python}]-rocm[{rocm}]-idx[{indexHash8}]`, `indexHash8` = lock `toolchain.rocm_index` → SHA256 prefix) and **ccache** (`CCACHE_CACHE_KEY`: `ccache-v2-lock[{lockHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`, no `lockWheel`) layer above worktree cache.
+A separate **pip toolchain cache** (`PIP_TOOLCHAIN_CACHE_KEY`: `pt-pip-toolchain-v2-py[{python}]-rocm[{rocm}]-idx[{indexHash8}]`, `indexHash8` = lock `toolchain.rocm_index` → SHA256 prefix) and **ccache** (`CCACHE_CACHE_KEY`: `ccache-v3-lock[{lockHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`, no `lockWheel`) layer above worktree cache.
 
 ### Build stages
 
@@ -130,7 +143,7 @@ torch-*+ck.rocm7.14.0.gfx120x*-cp312-cp312-win_amd64.whl
 | CI smoke test (CPU) | `npx tsx scripts/cli.ts 10.verify --dist-dir dist --build-caches dist\build-caches.json` |
 | Pre-deploy GPU smoke test (gfx120x hardware) | `python test/gpu-smoke-test.py -w .` |
 
-Smoke test (`10.verify`, CPU): wheel filename/structure (CK fwd dim markers; bwd negative assertion when `ck_disable_bwd=1`) → SHA256 / manifest → pip install → `torch.backends.cuda.is_ck_sdpa_available()`. GPU CK SDPA forward pass is in `test/gpu-smoke-test.py` (**pip install the wheel first**; run manually on gfx120x hardware before deploy; does not replace `10.verify`).
+Smoke test (`10.verify`, CPU): wheel filename/structure (CK fwd/bwd dim markers) → SHA256 / manifest → pip install → `torch.backends.cuda.is_ck_sdpa_available()`. GPU CK SDPA fwd/bwd is in `test/gpu-smoke-test.py` (**pip install the wheel first**; run manually on gfx120x hardware before deploy; does not replace `10.verify`; uses `sdpa_kernel(SDPBackend.FLASH_ATTENTION)` under `TORCH_ROCM_FA_PREFER_CK=1` so fwd/bwd must use CK, not math fallback).
 
 ## ComfyUI install
 
@@ -141,7 +154,7 @@ $PY = "<ComfyUI>\python_embeded\python.exe"
 
 After replacing the torch wheel under `python_embeded`:
 
-- Current wheel is **inference-only** (lock `ck_disable_bwd=true`); no CK FMHA backward
+- Current wheel is **full CK Tile FMHA** (forward + backward); fav_v3 omitted (lock has no MI3xx arch)
 - Keep launch arg **`--use-pytorch-cross-attention`**
 - Set env **`TORCH_ROCM_FA_PREFER_CK=1`** (or call `torch.backends.cuda.preferred_rocm_fa_library("ck")` at runtime)
 

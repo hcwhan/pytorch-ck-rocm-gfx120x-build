@@ -28,7 +28,6 @@ from pathlib import Path
 wheel = sys.argv[1]
 ck_opt_dim = sys.argv[2]
 expected_local = sys.argv[3]
-ck_disable_bwd = sys.argv[4]
 min_pyd_bytes = 512 * 1024
 min_core_dll_bytes = 512 * 1024
 min_aotriton_dll_bytes = 64 * 1024
@@ -138,28 +137,24 @@ with zipfile.ZipFile(wheel) as zf:
     dims_str = ','.join(str(dim) for dim in opt_dims)
     print(f'OK CK FMHA dim markers present dims={dims_str} scanned={scanned}')
 
-    if ck_disable_bwd == '1':
-        bwd_tokens = [
-            b'fmha_bwd.hpp',
-            b'_bwd_d32_',
-            b'_bwd_d64_',
-            b'_bwd_d128_',
-            b'_bwd_d256_',
-        ]
-        for name in ck_binaries:
-            info = zf.getinfo(name)
-            if info.file_size < min_ck_binary_bytes:
-                continue
-            data = zf.read(name)
-            for token in bwd_tokens:
-                if token in data:
-                    raise SystemExit(
-                        f'ERROR: CK FMHA bwd marker {token!r} found in {name} '
-                        f'(ck_disable_bwd=1)'
-                    )
-        print('OK CK FMHA bwd markers absent (inference-only build)')
-    else:
-        print('SKIP bwd marker check (bwd enabled)')
+    bwd_tokens = [f'_bwd_d{dim}_'.encode('ascii') for dim in opt_dims]
+    found_bwd_dims: set[int] = set()
+    for name in ck_binaries:
+        info = zf.getinfo(name)
+        if info.file_size < min_ck_binary_bytes:
+            continue
+        data = zf.read(name)
+        for dim, token in zip(opt_dims, bwd_tokens):
+            if token in data:
+                found_bwd_dims.add(dim)
+
+    missing_bwd = [dim for dim in opt_dims if dim not in found_bwd_dims]
+    if missing_bwd:
+        raise SystemExit(
+            f'ERROR: CK FMHA bwd OPT_DIM kernels missing in wheel binaries: {missing_bwd} '
+            f'(scanned {scanned} torch binaries)'
+        )
+    print(f'OK CK FMHA bwd dim markers present dims={dims_str}')
 
     meta_paths = [name for name in names if name.endswith('.dist-info/METADATA')]
     if not meta_paths:
@@ -233,10 +228,13 @@ function matchesGlob(name: string, pattern: string): boolean {
 function readWorkflowDispatch(): {
   ninja_workers: number;
   use_cache: boolean;
+  retry_count: number;
 } {
   const maxJobs = requireGithubActionsEnv("MAX_JOBS");
   const useCache = requireGithubActionsEnv("USE_CACHE");
+  const retryCountRaw = requireGithubActionsEnv("RETRY_COUNT");
   const ninjaWorkers = Number(maxJobs);
+  const retryCount = Number.parseInt(retryCountRaw, 10);
   if (
     !Number.isFinite(ninjaWorkers) ||
     !Number.isInteger(ninjaWorkers) ||
@@ -249,9 +247,13 @@ function readWorkflowDispatch(): {
       `USE_CACHE must be 'true' or 'false', got ${useCache}`,
     );
   }
+  if (!Number.isFinite(retryCount) || !Number.isInteger(retryCount) || retryCount < 0) {
+    throw new Error(`RETRY_COUNT must be a non-negative integer, got ${retryCountRaw}`);
+  }
   return {
     ninja_workers: ninjaWorkers,
     use_cache: useCache === "true",
+    retry_count: retryCount,
   };
 }
 
@@ -262,7 +264,6 @@ export function runVerify(options: {
   const expectedWheelPattern = requireLockEnv("EXPECTED_WHEEL_PATTERN");
   const ckOptDim = requireLockEnv("CK_OPT_DIM");
   const ckTargets = requireLockEnv("CK_TARGETS");
-  const ckFmhaDisableBwd = requireLockEnv("CK_FMHA_DISABLE_BWD");
   const pytorchBuildCommit = requireLockEnv("PYTORCH_BUILD_COMMIT");
   const wheelLocalVersion = requireLockEnv("WHEEL_LOCAL_VERSION");
   const rocmVersion = requireLockEnv("ROCM_VERSION");
@@ -318,7 +319,6 @@ export function runVerify(options: {
     whlPath,
     ckOptDim,
     wheelLocalVersion,
-    ckFmhaDisableBwd,
   ]);
 
   const whlStat = statSync(whlPath);
@@ -333,7 +333,6 @@ export function runVerify(options: {
     gpu_archs: gpuArchs,
     ck_targets: ckTargets,
     ck_opt_dim: ckOptDim,
-    ck_disable_bwd: ckFmhaDisableBwd === "1",
     wheel_local_version: wheelLocalVersion,
     source_date_epoch: Number(sourceDateEpoch),
     build_variant: "serial",

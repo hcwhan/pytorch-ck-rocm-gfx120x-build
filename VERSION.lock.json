@@ -11,8 +11,7 @@
   },
   "compile": {
     "gpu_archs": "gfx1200;gfx1201",
-    "ck_opt_dim": "32,64,128,256",
-    "ck_disable_bwd": true
+    "ck_opt_dim": "32,64,128,256"
   },
   "wheel": {
     "wheel_local_version": "ck-rocm7.14.0-gfx120x",

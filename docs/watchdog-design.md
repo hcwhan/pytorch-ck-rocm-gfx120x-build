@@ -50,7 +50,7 @@ GitHub-hosted runner 的 job 执行硬上限为 **6 小时**（不可突破）�
 | `ABORT_TRIGGERED` | `watchdog.ts`（`08.build` 调用） | `true` = 已触发优雅中止 |
 | `ABORT_FORCE_KILLED` | `watchdog.ts` | `true` = 3× SIGINT 失败、已 taskkill；**不 save、不 retry** |
 | `COMPILE_COMPLETE` | `08.build` | `true` = 编译成功；中止时写 `false` |
-| `RETRY_COUNT` | workflow input → env | 当前 retry 计数，仅 save 后 `12.watchdog-retry` 判断 |
+| `RETRY_COUNT` | workflow input → env | 当前 retry 计数（manifest `dispatch.retry_count`；仅 save 后 `12.watchdog-retry` 判断） |
 | `PUBLISH_RELEASE` | workflow input → env | retry dispatch 时继承 `publish_release` |
 
 ## 为什么用 SIGINT + 吞信号
