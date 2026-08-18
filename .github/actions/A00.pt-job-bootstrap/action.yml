@@ -103,3 +103,10 @@ runs:
       run: |
         npx tsx scripts/cli.ts 07.pin-mtimes --pt-src $env:PT_SRC
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    - name: Apply incremental B1 patch on worktree cache hit
+      if: steps.export-worktree-used.outputs.cache-used == 'true'
+      shell: pwsh
+      run: |
+        npx tsx scripts/cli.ts 04.patch-tmp --pt-src $env:PT_SRC
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
