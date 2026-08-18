@@ -4,7 +4,6 @@ import { runConfig } from "./commands/01.config.js";
 import { runToolchainFingerprint } from "./commands/02.toolchain-fingerprint.js";
 import { runPrep } from "./commands/03.prep.js";
 import { runPatch } from "./commands/04.patch.js";
-import { runPatchTmp } from "./commands/04.patch-tmp.js";
 import { runHipify } from "./commands/05.hipify.js";
 import { runVerifyBootstrap } from "./commands/06.verify-bootstrap.js";
 import { runPinMtimes } from "./commands/07.pin-mtimes.js";
@@ -61,16 +60,6 @@ program
   .requiredOption("--pt-src <path>")
   .action((opts) => {
     runPatch({ ptSrc: opts.ptSrc });
-  });
-
-program
-  .command("04.patch-tmp")
-  .description(
-    "worktree cache hit 增量 B1-v3：对齐 mha_varlen_bwd_ck 直调 fmha_bwd；支持 v1/v2 缓存升级（不进 patch hash）",
-  )
-  .requiredOption("--pt-src <path>")
-  .action((opts) => {
-    runPatchTmp({ ptSrc: opts.ptSrc });
   });
 
 program

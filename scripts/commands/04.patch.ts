@@ -343,6 +343,322 @@ function buildSkipFavV3AtenPoints(): PatchPoint[] {
   ];
 }
 
+const MHA_BWD_CK_SKIP_FAV_V3_COMMENT =
+  "// local: gfx120x skip fav_v3 — mha_bwd_ck calls fmha_bwd directly (no aiter::mha_bwd link)";
+
+/** 对齐 mha_varlen_bwd_ck.hip：hdim 开头的 fmha_bwd_traits */
+function mhaBwdCkTraitsFunction(): string {
+  return `fmha_bwd_traits get_ck_fmha_bwd_traits(const mask_info &mask,
+                                         std::string dtype,
+                                         int head_size,
+                                         bool has_dropout,
+                                         bool enable_bias,
+                                         bool bias_requires_grad,
+                                         bool deterministic)
+{
+    return fmha_bwd_traits{head_size,
+                           head_size,
+                           dtype,
+                           false,
+                           mask.type,
+                           enable_bias ? bias_enum::elementwise_bias : bias_enum::no_bias,
+                           bias_requires_grad,
+                           has_dropout,
+                           false,
+                           deterministic};
+}
+
+`;
+}
+
+/** 对齐 mha_varlen_bwd_ck.hip batch 模式：dq_acc_ptr + hdim_q/v + mask_type */
+function mhaBwdCkArgsReturnBlock(): string {
+  return `    float p_undrop = 1.0 - p_dropout;
+
+    return fmha_bwd_args{q.data_ptr(),
+        k.data_ptr(),
+        v.data_ptr(),
+        attn_bias_ptr,
+        out.data_ptr(),
+        softmax_lse.data_ptr(),
+        dout.data_ptr(),
+        d.data_ptr(),
+        nullptr,
+        dq.data_ptr(),
+        dk.data_ptr(),
+        dv.data_ptr(),
+        dbias_ptr,
+        dq_acc.data_ptr(),
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        seqlen_q,
+        seqlen_k,
+        b,
+        seqlen_q,
+        seqlen_k,
+        hdim,
+        hdim,
+        h,
+        h_k,
+        softmax_scale,
+        stride_q,
+        stride_k,
+        stride_v,
+        stride_attn_bias,
+        stride_o,
+        0,
+        stride_do,
+        stride_dq_acc,
+        stride_dq,
+        stride_dk,
+        stride_dv,
+        stride_dbias,
+        nhead_stride_q,
+        nhead_stride_k,
+        nhead_stride_v,
+        nhead_stride_bias,
+        nhead_stride_o,
+        0,
+        nhead_stride_do,
+        nhead_stride_lse,
+        nhead_stride_dq_acc,
+        nhead_stride_dq,
+        nhead_stride_dk,
+        nhead_stride_dv,
+        nhead_stride_dbias,
+        batch_stride_q,
+        batch_stride_k,
+        batch_stride_v,
+        batch_stride_bias,
+        batch_stride_o,
+        0,
+        batch_stride_do,
+        batch_stride_lse,
+        batch_stride_dq_acc,
+        batch_stride_dq,
+        batch_stride_dk,
+        batch_stride_dv,
+        batch_stride_dbias,
+        split_stride_dq_acc,
+        mask.left,
+        mask.right,
+        static_cast<ck_tile::index_t>(mask.type),
+        p_dropout,
+        p_undrop,
+        drop_seed_offset};`;
+}
+
+function mhaBwdCkCallSiteBlock(): string {
+  return `        auto traits = get_ck_fmha_bwd_traits(
+                mask,
+                q_dtype_str,
+                head_size_8x,
+                is_dropout,
+                attn_bias_.has_value(),
+                bias_requires_grad,
+                deterministic);
+
+        auto ck_args =
+            get_ck_fmha_bwd_args(
+                mask,
+                q_dtype_str,
+                is_dropout,
+                attn_bias_.has_value(),
+                deterministic,
+                bias_requires_grad,
+                batch_size,
+                seqlen_q,
+                seqlen_k,
+                num_heads,
+                num_heads_k,
+                head_size_8x,
+                q,
+                k,
+                v,
+                attn_bias_,
+                grad_bias,
+                out,
+                softmax_lse,
+                dout_padded,
+                dq_accum,
+                softmax_d,
+                dq,
+                dk_expanded,
+                dv_expanded,
+                softmax_scale,
+                p_dropout,
+                drop_seed_offset);
+
+        float t = fmha_bwd(traits, ck_args, stream_config);`;
+}
+
+/**
+ * 无 MI3xx 时 skip fav_v3：mha_bwd_ck 直调 fmha_bwd（布局对齐 mha_varlen_bwd_ck.hip）。
+ */
+function buildMhaBwdCkSkipFavV3Points(): PatchPoint[] {
+  return [
+    {
+      name: "mha-bwd-ck-drop-aiter-include",
+      before: `#include <ATen/native/transformers/hip/flash_attn/flash_common_hip.hpp>
+#include <mha_bwd.h>
+#include <fmha_bwd.hpp>`,
+      after: `#include <ATen/native/transformers/hip/flash_attn/flash_common_hip.hpp>
+#include <fmha_bwd.hpp>`,
+    },
+    {
+      name: "mha-bwd-ck-traits-fn-and-args-type",
+      before: `namespace pytorch_flash {
+
+aiter::mha_bwd_args get_ck_fmha_bwd_args`,
+      after: `namespace pytorch_flash {
+
+${MHA_BWD_CK_SKIP_FAV_V3_COMMENT}
+
+${mhaBwdCkTraitsFunction()}fmha_bwd_args get_ck_fmha_bwd_args`,
+    },
+    {
+      name: "mha-bwd-ck-fmha-bwd-args-return",
+      before: `    float p_undrop = 1.0 - p_dropout;
+
+    return aiter::mha_bwd_args{
+        // aiter args
+        static_cast<int>(mask.type),
+        hdim <= 192,   // use_asm_v3: ASM v3 only supports head dim <= 192
+        true,   // v3_atomic_fp32
+        1,      // v3_bf16_cvt
+        false,  // v3_api_check
+
+        // From ck fmha_bwd_traits
+        hdim,   // hdim_q
+        hdim,   // hdim_v
+        dtype,  // data_type
+        false,  // is_group_mode
+        static_cast<int>(mask.type),  // ck_mask_type
+        enable_bias ? static_cast<int>(bias_enum::elementwise_bias) : static_cast<int>(bias_enum::no_bias),
+        bias_requires_grad,  // has_dbias
+        has_dropout,
+        false,  // is_store_randval
+        deterministic,  // is_deterministic
+
+        // From ck fmha_bwd_args
+        q.data_ptr(),
+        k.data_ptr(),
+        v.data_ptr(),
+        attn_bias_ptr,
+        out.data_ptr(),  // o_ptr
+        softmax_lse.data_ptr(),  // lse_ptr
+        dout.data_ptr(),  // do_ptr
+        d.data_ptr(),
+        nullptr,  // rand_val_ptr
+        dq.data_ptr(),
+        dk.data_ptr(),
+        dv.data_ptr(),
+        dbias_ptr,
+        dq_acc.data_ptr(),  // dq_acc_ptr
+        nullptr,  // seqstart_q_ptr
+        nullptr,  // seqstart_k_ptr
+        nullptr,  // seqlen_q_ptr
+        nullptr,  // seqlen_k_ptr
+        nullptr,  // cu_seqlen_q_ptr
+        nullptr,  // cu_seqlen_k_ptr
+        seqlen_q,
+        seqlen_k,
+        b,  // batch
+        seqlen_q,  // max_seqlen_q
+        seqlen_k,  // max_seqlen_k
+        h,  // nhead_q
+        h_k,  // nhead_k
+        softmax_scale,  // scale
+        stride_q,
+        stride_k,
+        stride_v,
+        stride_attn_bias,  // stride_bias
+        stride_o,
+        0,  // stride_randval
+        stride_do,
+        stride_dq_acc,
+        stride_dq,
+        stride_dk,
+        stride_dv,
+        stride_dbias,
+        nhead_stride_q,
+        nhead_stride_k,
+        nhead_stride_v,
+        nhead_stride_bias,
+        nhead_stride_o,
+        0,  // nhead_stride_randval
+        nhead_stride_do,
+        nhead_stride_lse,
+        nhead_stride_dq_acc,
+        nhead_stride_dq,
+        nhead_stride_dk,
+        nhead_stride_dv,
+        nhead_stride_dbias,
+        batch_stride_q,
+        batch_stride_k,
+        batch_stride_v,
+        batch_stride_bias,
+        batch_stride_o,
+        0,  // batch_stride_randval
+        batch_stride_do,
+        batch_stride_lse,
+        batch_stride_dq_acc,
+        batch_stride_dq,
+        batch_stride_dk,
+        batch_stride_dv,
+        batch_stride_dbias,
+        split_stride_dq_acc,
+        mask.left,  // window_size_left
+        mask.right,  // window_size_right
+        p_dropout,  // p_drop
+        p_undrop,
+        drop_seed_offset
+    };`,
+      after: mhaBwdCkArgsReturnBlock(),
+    },
+    {
+      name: "mha-bwd-ck-direct-fmha-bwd-call",
+      before: `        auto args =
+            get_ck_fmha_bwd_args(
+                mask,
+                q_dtype_str,
+                is_dropout,
+                attn_bias_.has_value(),
+                deterministic,
+                bias_requires_grad,
+                batch_size,
+                seqlen_q,
+                seqlen_k,
+                num_heads,
+                num_heads_k,
+                head_size_8x,
+                q,
+                k,
+                v,
+                attn_bias_,
+                grad_bias,
+                out,
+                softmax_lse,
+                dout_padded,
+                dq_accum,
+                softmax_d,
+                dq,
+                dk_expanded,
+                dv_expanded,
+                softmax_scale,
+                p_dropout,
+                drop_seed_offset);
+
+        float t = aiter::mha_bwd(args, stream_config);`,
+      after: mhaBwdCkCallSiteBlock(),
+    },
+  ];
+}
+
 /**
  * 对 clone 后的 PyTorch 源码应用 gfx120x CK SDPA 全部 patch。
  *
@@ -355,6 +671,7 @@ function buildSkipFavV3AtenPoints(): PatchPoint[] {
  * 6. torch/headeronly/macros/Macros.h — clang-cl 跳过 _wassert 的 C10_IMPORT/dllimport（local）
  * 7. ck/CMakeLists.txt — Windows codegen 适配 + CK_TARGETS（buildCkCmakePoints）
  * 8. aten/CMakeLists.txt — #188114 arch whitelist；无 MI3xx 时 skip fav_v3（buildSkipFavV3AtenPoints）
+ * 9. ck/mha_bwd_ck.hip — 无 MI3xx 时直调 fmha_bwd（buildMhaBwdCkSkipFavV3Points，local）
  */
 export function runPatch(options: { ptSrc: string }): void {
   const root = path.resolve(options.ptSrc);
@@ -607,6 +924,10 @@ std::tuple<`,
     atenPoints.push(...buildSkipFavV3AtenPoints());
   }
   applyPoints(atenCmake, atenPoints);
+
+  if (!includeFavV3) {
+    applyPoints(path.join(ckDir, "mha_bwd_ck.hip"), buildMhaBwdCkSkipFavV3Points());
+  }
 
   const favV3Status = includeFavV3
     ? "enabled (MI3xx in GPU_ARCHS)"
