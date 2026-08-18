@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { formatCkTargetsFlag } from "./gpu-archs.js";
-import { buildPipToolchainCacheKey } from "./pip-cache-key.js";
+import { buildPipToolchainCacheKey, PIP_TOOLCHAIN_CACHE_PREFIX } from "./pip-cache-key.js";
 
 const gitShaSchema = z
   .string()
@@ -49,6 +49,7 @@ type VersionLockVars = {
   PYTHON_VERSION: string;
   ROCM_INDEX: string;
   ROCM_VERSION: string;
+  PIP_TOOLCHAIN_CACHE_PREFIX: string;
   PIP_TOOLCHAIN_CACHE_KEY: string;
   GPU_ARCHS: string;
   CK_TARGETS: string;
@@ -171,6 +172,7 @@ export function readVersionLock(workspaceRoot: string): VersionLockVars {
     PYTHON_VERSION: lock.toolchain.python,
     ROCM_INDEX: lock.toolchain.rocm_index,
     ROCM_VERSION: lock.toolchain.rocm,
+    PIP_TOOLCHAIN_CACHE_PREFIX,
     PIP_TOOLCHAIN_CACHE_KEY: buildPipToolchainCacheKey({
       pythonVersion: lock.toolchain.python,
       rocmVersion: lock.toolchain.rocm,

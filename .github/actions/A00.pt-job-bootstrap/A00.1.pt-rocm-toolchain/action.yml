@@ -11,10 +11,6 @@ inputs:
   rocm-version:
     description: ROCm pip 包版本（rocm[devel]、rocm-sdk-libraries、rocm-sdk-device-*；VERSION.lock.json toolchain.rocm）
     required: true
-  pip-cache-key:
-    description: Pip 工具链缓存 key（VERSION.lock.json → PIP_TOOLCHAIN_CACHE_KEY）
-    required: true
-
 runs:
   using: composite
   steps:
@@ -127,11 +123,12 @@ runs:
         $env:Path = "$(Join-Path $libuvRoot 'bin');$env:Path"
 
     - name: Restore pip toolchain cache
-      uses: actions/cache/restore@v6
+      uses: hcwhan/actions/cache/restore@v1
       id: pip-toolchain-cache
       with:
         path: ${{ runner.temp }}/pip-toolchain-cache
-        key: ${{ inputs.pip-cache-key }}
+        family-key: ${{ env.PIP_TOOLCHAIN_CACHE_PREFIX }}
+        cache-key: ${{ env.PIP_TOOLCHAIN_CACHE_KEY }}
 
     - name: Export pip cache directory
       shell: pwsh
@@ -183,8 +180,9 @@ runs:
         Write-Host "OK rocrand.dll present at $rocrand"
 
     - name: Save pip toolchain cache
-      if: steps.pip-toolchain-cache.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v6
+      if: steps.pip-toolchain-cache.outputs.cache-used != 'true'
+      uses: hcwhan/actions/cache/save@v1
       with:
         path: ${{ runner.temp }}/pip-toolchain-cache
-        key: ${{ inputs.pip-cache-key }}
+        family-key: ${{ env.PIP_TOOLCHAIN_CACHE_PREFIX }}
+        cache-key: ${{ env.PIP_TOOLCHAIN_CACHE_KEY }}

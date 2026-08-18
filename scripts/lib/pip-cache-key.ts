@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 
-function cacheKeyToken(value: string): string {
-  return value.replace(/[^a-zA-Z0-9._-]+/g, "-");
-}
+import { cacheKeyToken } from "./cache-key-token.js";
+
+export const PIP_TOOLCHAIN_CACHE_PREFIX = "pt-pip-toolchain-v2";
 
 function cacheKeySegment(label: string, value: string): string {
   return `${label}[${cacheKeyToken(value)}]`;
@@ -19,7 +19,7 @@ export function buildPipToolchainCacheKey(options: {
     .slice(0, 8);
 
   return [
-    "pt-pip-toolchain-v2",
+    PIP_TOOLCHAIN_CACHE_PREFIX,
     cacheKeySegment("py", options.pythonVersion),
     cacheKeySegment("rocm", options.rocmVersion),
     cacheKeySegment("idx", indexHash),

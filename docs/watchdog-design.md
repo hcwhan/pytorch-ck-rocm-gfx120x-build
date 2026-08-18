@@ -24,7 +24,7 @@ GitHub-hosted runner 的 job 执行硬上限为 **6 小时**（不可突破）�
 3. 中止流程：**先**写 `ABORT_TRIGGERED=true`、`COMPILE_COMPLETE=false` 到 `$GITHUB_ENV`，
    再 `child.kill("SIGINT")`；若子进程仍未退出，**每 1 分钟**重复发送，最多 **3 次**；
    3 次后 `taskkill /PID /T /F` 强杀子进程树，并写 `ABORT_FORCE_KILLED=true`。
-   **SIGINT 内退出**：A01.1 照常 save；**需 taskkill**：跳过 save/delete cache，且不触发 retry。
+   **SIGINT 内退出**：A01.1 照常 save；**需 taskkill**：跳过 save cache，且不触发 retry。
    中止期间 Node 通过 `process.on('SIGINT')` + `swallowSigint` 拦截误传到自身的 SIGINT，以保持存活并完成 save。
 4. 编译正常完成：写 `COMPILE_COMPLETE=true`，继续 wheel 打包。
 5. A01.1 save（`use_cache=true` 时失败也 save）存档 worktree + ccache。
@@ -114,6 +114,6 @@ bootstrap composite 第一步（Setup Node 之前）写入 `$GITHUB_ENV`。
 | 风险 | 缓解 |
 |------|------|
 | SIGINT 单次失败 | 每 1min 重复，最多 3 次 |
-| 3 次后仍不退出 | `taskkill` + `ABORT_FORCE_KILLED=true`；A01.1 跳过 save/delete，workflow 跳过 retry |
+| 3 次后仍不退出 | `taskkill` + `ABORT_FORCE_KILLED=true`；A01.1 跳过 save，workflow 跳过 retry |
 | dispatch 失败 | 3 次重试 + 明确报错 |
 | 并发取消延迟 | 等 300s 后报错，wheel 步骤 `success()` guard |

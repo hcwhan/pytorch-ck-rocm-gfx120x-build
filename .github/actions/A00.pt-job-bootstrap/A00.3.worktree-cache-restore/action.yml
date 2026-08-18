@@ -1,5 +1,5 @@
 name: Restore worktree cache
-description: 恢复 patch+hipify+build/ 整棵 PyTorch 工作树（精确 WORKTREE_CACHE_KEY；无 restore-keys）
+description: 恢复 patch+hipify+build/ 整棵 PyTorch 工作树（WORKTREE_CACHE_KEY 槽位最新 versioned key；use-cache=false 时仅 lookup）
 
 inputs:
   pt-src:
@@ -23,30 +23,29 @@ runs:
   steps:
     - name: Restore worktree cache
       if: inputs.use-cache == 'true'
-      uses: actions/cache/restore@v6
+      uses: hcwhan/actions/cache/restore@v1
       id: cache-restore
       with:
         path: ${{ inputs.pt-src }}
-        key: ${{ env.WORKTREE_CACHE_KEY }}
+        family-key: ${{ env.WORKTREE_CACHE_PREFIX }}
+        cache-key: ${{ env.WORKTREE_CACHE_KEY }}
 
     - name: Lookup worktree cache (restore skipped)
       if: inputs.use-cache != 'true'
-      uses: actions/cache/restore@v6
+      uses: hcwhan/actions/cache/lookup@v1
       id: cache-lookup
       with:
-        path: ${{ inputs.pt-src }}
-        key: ${{ env.WORKTREE_CACHE_KEY }}
-        lookup-only: true
+        cache-key: ${{ env.WORKTREE_CACHE_KEY }}
 
     - name: Resolve worktree cache outputs
       id: worktree-cache
       shell: pwsh
       run: |
         if ('${{ inputs.use-cache }}' -eq 'true') {
-          $exists = '${{ steps.cache-restore.outputs.cache-hit }}' -eq 'true'
-          $used = $exists
+          $exists = '${{ steps.cache-restore.outputs.cache-exists }}' -eq 'true'
+          $used = '${{ steps.cache-restore.outputs.cache-used }}' -eq 'true'
         } else {
-          $exists = '${{ steps.cache-lookup.outputs.cache-hit }}' -eq 'true'
+          $exists = '${{ steps.cache-lookup.outputs.cache-exists }}' -eq 'true'
           $used = $false
         }
         Write-Host "Worktree cache restore: exists=$exists used=$used key=$env:WORKTREE_CACHE_KEY"

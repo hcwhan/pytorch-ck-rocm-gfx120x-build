@@ -42,7 +42,6 @@ runs:
         python-version: ${{ env.PYTHON_VERSION }}
         rocm-index: ${{ env.ROCM_INDEX }}
         rocm-version: ${{ env.ROCM_VERSION }}
-        pip-cache-key: ${{ env.PIP_TOOLCHAIN_CACHE_KEY }}
 
     - name: Fingerprint worktree + ccache cache keys
       shell: pwsh
