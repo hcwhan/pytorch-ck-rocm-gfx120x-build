@@ -9,6 +9,7 @@ import {
   parseGpuArchList,
 } from "../lib/gpu-archs.js";
 import { requireLockEnv } from "../lib/require-env.js";
+import { cmakeConfigureQuietArgsLines } from "../lib/cmake-configure-quiet-flags.js";
 import { WINDOWS_CLANG_WARNING_SUPPRESS_FLAGS } from "../lib/windows-clang-warning-flags.js";
 
 /**
@@ -736,6 +737,7 @@ export function runPatch(options: { ptSrc: string }): void {
   // xz/liblzma：clang-cl -Wno 列表 + 末尾 -w，覆盖子工程 CMake 后续追加的 -Wall 等
   const xzExternalCFlags =
     "/utf-8 /Brepro -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument -Wno-unsafe-buffer-usage -Wno-declaration-after-statement -Wno-disabled-macro-expansion -Wno-implicit-void-ptr-cast -Wno-reserved-macro-identifier -Wno-jump-misses-init -Wno-padded -Wno-reserved-identifier -Wno-used-but-marked-unused -Wno-nonportable-system-include-path -Wno-unused-parameter -Wno-implicit-int-conversion -Wno-implicit-int-enum-cast -Wno-deprecated-declarations -Wno-c++-unterminated-string-initialization -Wno-sign-compare -Wno-conditional-uninitialized -Wno-covered-switch-default -Wno-sign-conversion -Wno-cast-align -Wno-shorten-64-to-32 -Wno-extra-semi-stmt -Wno-c++-keyword -Wno-switch-default -Wno-switch-enum -Wno-cast-qual -Wno-undef -Wno-overlength-strings -Wno-global-constructors -Wno-pointer-sign -Wno-pre-c11-compat -Wno-unterminated-string-initialization -w";
+  const externalCmakeQuietArgs = cmakeConfigureQuietArgsLines();
   applyPoints(path.join(root, "cmake/External/aotriton.cmake"), [
     // dlfcn-win32：CMAKE_ARGS（仅首次 configure 生效）+ UPDATE_DISCONNECTED
     {
@@ -759,7 +761,8 @@ export function runPatch(options: { ptSrc: string }): void {
         "-DCMAKE_CXX_FLAGS=${msvcExternalCFlags}"
         -DCMAKE_SHARED_LINKER_FLAGS=/Brepro
         -DCMAKE_EXE_LINKER_FLAGS=/Brepro
-        -DCMAKE_INSTALL_PREFIX=\${__DLFCN_WIN32_INSTALL_DIR}`,
+        -DCMAKE_INSTALL_PREFIX=\${__DLFCN_WIN32_INSTALL_DIR}
+${externalCmakeQuietArgs}`,
     },
     // xz/liblzma：继承父工程 clang-cl（非 dlfcn 的 MSVC cl）
     {
@@ -780,7 +783,8 @@ export function runPatch(options: { ptSrc: string }): void {
       CMAKE_ARGS
         -DCMAKE_SUPPRESS_REGENERATION:BOOL=ON
         "-DCMAKE_C_FLAGS=${xzExternalCFlags}"
-        -DCMAKE_INSTALL_PREFIX=\${__XZ_INSTALL_DIR}`,
+        -DCMAKE_INSTALL_PREFIX=\${__XZ_INSTALL_DIR}
+${externalCmakeQuietArgs}`,
     },
     // aotriton_runtime：CMAKE_ARGS append 父工程 flags（保留 /EHsc 等默认项）；CMAKE_CACHE_ARGS 仅存无空格 cache 项
     {
@@ -795,6 +799,7 @@ export function runPatch(options: { ptSrc: string }): void {
         "-DCMAKE_CXX_FLAGS=\${CMAKE_CXX_FLAGS} ${clangExternalCFlags}"
         "-DCMAKE_SHARED_LINKER_FLAGS=\${CMAKE_SHARED_LINKER_FLAGS} /Brepro"
         "-DCMAKE_EXE_LINKER_FLAGS=\${CMAKE_EXE_LINKER_FLAGS} /Brepro"
+${externalCmakeQuietArgs}
       CMAKE_CACHE_ARGS
       -DCMAKE_SUPPRESS_REGENERATION:BOOL=ON
       -DAOTRITON_TARGET_ARCH:STRING=\${PYTORCH_ROCM_ARCH}

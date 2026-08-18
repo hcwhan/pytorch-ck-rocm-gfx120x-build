@@ -4,6 +4,7 @@ import { run } from "./exec.js";
 import { requireMaxJobs } from "./max-jobs.js";
 import { getRocmSdkPaths } from "./rocm-sdk-paths.js";
 import { requireLockEnv } from "./require-env.js";
+import { CMAKE_CONFIGURE_QUIET_FLAGS } from "./cmake-configure-quiet-flags.js";
 import { WINDOWS_CLANG_WARNING_SUPPRESS_FLAGS } from "./windows-clang-warning-flags.js";
 
 const PYTHON = "python";
@@ -59,7 +60,7 @@ export function initBuildEnv(options: {
   process.env.CMAKE_BUILD_TYPE = "Release";
   process.env.CMAKE_SUPPRESS_REGENERATION = "ON";
   process.env.CMAKE_ARGS =
-    "-DUSE_ROCM_CK_SDPA=ON -DUSE_ROCM_CK_GEMM=OFF -DBUILD_TEST=OFF -DUSE_KINETO=OFF -DUSE_DISTRIBUTED=ON";
+    `-DUSE_ROCM_CK_SDPA=ON -DUSE_ROCM_CK_GEMM=OFF -DBUILD_TEST=OFF -DUSE_KINETO=OFF -DUSE_DISTRIBUTED=ON ${CMAKE_CONFIGURE_QUIET_FLAGS}`;
 
   const versionFile = path.join(ptSrc, "version.txt");
   const baseVersion = readFileSync(versionFile, "utf8").trim();

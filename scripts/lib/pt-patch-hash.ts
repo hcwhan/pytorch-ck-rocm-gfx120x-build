@@ -6,6 +6,7 @@ import path from "node:path";
 const PATCH_INPUT_PATHS = [
   "scripts/commands/04.patch.ts",
   "scripts/lib/windows-clang-warning-flags.ts",
+  "scripts/lib/cmake-configure-quiet-flags.ts",
   "scripts/commands/05.hipify.ts",
   "scripts/lib/gpu-archs.ts",
   "build/add-make-kernel-pt.py",
