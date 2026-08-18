@@ -9,6 +9,7 @@ import {
   parseGpuArchList,
 } from "../lib/gpu-archs.js";
 import { requireLockEnv } from "../lib/require-env.js";
+import { WINDOWS_CLANG_WARNING_SUPPRESS_FLAGS } from "../lib/windows-clang-warning-flags.js";
 
 /**
  * PyTorch CK SDPA gfx120x 程序化补丁。
@@ -663,7 +664,7 @@ ${mhaBwdCkTraitsFunction()}fmha_bwd_args get_ck_fmha_bwd_args`,
  * 对 clone 后的 PyTorch 源码应用 gfx120x CK SDPA 全部 patch。
  *
  * 补丁分组：
- * 1. 根 CMakeLists.txt — 启用 Windows CK SDPA（撤销 #182733）、MSVC /Brepro 与 clang-cl 警告抑制（local）
+ * 1. 根 CMakeLists.txt — 启用 Windows CK SDPA（撤销 #182733）、MSVC /Brepro 与 clang-cl/HIP clang++ 警告抑制（local）
  * 2. cmake/External/aotriton.cmake — 外部依赖 UPDATE_DISCONNECTED、CMAKE_SUPPRESS_REGENERATION 与编译选项注入（local）
  * 3. Context.cpp / launch_kernel_pt.hpp — #188114 gfx120x 架构支持
  * 4. hip/flash_attn/flash_api.h — 移除 mha_fwd_ck 声明的 TORCH_API（local，Windows dllimport）
@@ -717,8 +718,9 @@ export function runPatch(options: { ptSrc: string }): void {
   endforeach(flag_var)
 
   if(MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    string(APPEND CMAKE_C_FLAGS " -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument -Wno-unknown-warning-option -Wno-unsafe-buffer-usage -Wno-declaration-after-statement -Wno-missing-prototypes -Wno-implicit-float-conversion -Wno-sign-conversion -Wno-cast-align -Wno-reserved-identifier -Wno-reserved-macro-identifier -Wno-disabled-macro-expansion -Wno-implicit-void-ptr-cast -Wno-double-promotion -Wno-shadow -Wno-unused-macros -Wno-jump-misses-init -Wno-padded -Wno-tentative-definition-compat -Wno-inconsistent-dllimport -Wno-deprecated-declarations -Wno-pass-failed -Wno-unused-parameter -Wno-used-but-marked-unused -Wno-float-equal -Wno-nonportable-system-include-path -Wno-strict-prototypes -Wno-implicit-int-conversion -Wno-implicit-int-enum-cast -Wno-unknown-attributes -Wno-covered-switch-default -Wno-shorten-64-to-32 -Wno-bad-function-cast -Wno-extra-semi-stmt -Wno-float-conversion -Wno-switch-default -Wno-c++-keyword -Wno-implicit-int-float-conversion -Wno-missing-variable-declarations -Wno-pedantic -Wno-switch-enum -Wno-cast-qual -Wno-overlength-strings -Wno-undef -Wno-missing-noreturn -Wno-redundant-parens -Wno-microsoft-unqualified-friend -Wno-pre-c11-compat -Wno-pointer-sign -Wno-global-constructors -Wno-unterminated-string-initialization -Wno-c++-unterminated-string-initialization -Wno-sign-compare -Wno-conditional-uninitialized -Wno-macro-redefined -Wno-format -Wno-implicit-const-int-float-conversion -Wno-cuda-compat -Wno-switch -Wno-unused-value -Wno-dll-attribute-on-redeclaration -Wno-format-nonliteral -Wno-exceptions -Wno-unused-result")
-    string(APPEND CMAKE_CXX_FLAGS " -Wno-ignored-attributes -Wno-unknown-argument -Wno-unused-command-line-argument -Wno-unknown-warning-option -Wno-unsafe-buffer-usage -Wno-declaration-after-statement -Wno-missing-prototypes -Wno-implicit-float-conversion -Wno-sign-conversion -Wno-cast-align -Wno-reserved-identifier -Wno-reserved-macro-identifier -Wno-disabled-macro-expansion -Wno-implicit-void-ptr-cast -Wno-double-promotion -Wno-shadow -Wno-unused-macros -Wno-jump-misses-init -Wno-padded -Wno-tentative-definition-compat -Wno-inconsistent-dllimport -Wno-deprecated-declarations -Wno-pass-failed -Wno-unused-parameter -Wno-used-but-marked-unused -Wno-float-equal -Wno-nonportable-system-include-path -Wno-strict-prototypes -Wno-implicit-int-conversion -Wno-implicit-int-enum-cast -Wno-unknown-attributes -Wno-covered-switch-default -Wno-shorten-64-to-32 -Wno-bad-function-cast -Wno-extra-semi-stmt -Wno-float-conversion -Wno-switch-default -Wno-c++-keyword -Wno-implicit-int-float-conversion -Wno-missing-variable-declarations -Wno-pedantic -Wno-switch-enum -Wno-cast-qual -Wno-overlength-strings -Wno-undef -Wno-missing-noreturn -Wno-redundant-parens -Wno-microsoft-unqualified-friend -Wno-pre-c11-compat -Wno-pointer-sign -Wno-global-constructors -Wno-unterminated-string-initialization -Wno-c++-unterminated-string-initialization -Wno-sign-compare -Wno-conditional-uninitialized -Wno-macro-redefined -Wno-format -Wno-implicit-const-int-float-conversion -Wno-cuda-compat -Wno-switch -Wno-unused-value -Wno-dll-attribute-on-redeclaration -Wno-format-nonliteral -Wno-exceptions -Wno-unused-result")
+    string(APPEND CMAKE_C_FLAGS " ${WINDOWS_CLANG_WARNING_SUPPRESS_FLAGS}")
+    string(APPEND CMAKE_CXX_FLAGS " ${WINDOWS_CLANG_WARNING_SUPPRESS_FLAGS}")
+    string(APPEND CMAKE_HIP_FLAGS " ${WINDOWS_CLANG_WARNING_SUPPRESS_FLAGS}")
   endif()
 
   foreach(flag_var CMAKE_SHARED_LINKER_FLAGS)`,
