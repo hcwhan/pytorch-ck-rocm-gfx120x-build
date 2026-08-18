@@ -5,7 +5,8 @@ import { requireLockEnv } from "../lib/require-env.js";
 
 /** 临时 B1 patch 标记；合入 04.patch.ts 后删除本文件与 bootstrap 钩子。 */
 const B1_TMP_MARKER = "CK_SDPA_B1_TMP";
-const B1_V2_SENTINEL = "get_ck_fmha_bwd_traits";
+/** PyTorch v2.13.0 fmha_bwd.hpp 与 mha_varlen_bwd_ck.hip 对齐的 traits 布局 */
+const B1_V3_TRAITS_SENTINEL = "return fmha_bwd_traits{head_size,";
 
 type PatchPoint = {
   name: string;
@@ -76,29 +77,18 @@ function deleteMhaBwdCkObj(ptSrc: string): void {
   }
 }
 
+/** 对齐 mha_varlen_bwd_ck.hip：hdim 开头的 fmha_bwd_traits */
 function b1TraitsFunction(): string {
   return `fmha_bwd_traits get_ck_fmha_bwd_traits(const mask_info &mask,
                                          std::string dtype,
-                                         int seqlen_q,
-                                         int seqlen_k,
-                                         int batch,
                                          int head_size,
-                                         int nhead_q,
-                                         int nhead_k,
                                          bool has_dropout,
                                          bool enable_bias,
                                          bool bias_requires_grad,
                                          bool deterministic)
 {
-    return fmha_bwd_traits{seqlen_q,
-                           seqlen_k,
-                           batch,
-                           seqlen_q,
-                           seqlen_k,
+    return fmha_bwd_traits{head_size,
                            head_size,
-                           head_size,
-                           nhead_q,
-                           nhead_k,
                            dtype,
                            false,
                            mask.type,
@@ -112,96 +102,92 @@ function b1TraitsFunction(): string {
 `;
 }
 
+/** 对齐 mha_varlen_bwd_ck.hip batch 模式：dq_acc_ptr + hdim_q/v + mask_type */
 function b1ArgsReturnBlock(): string {
   return `    float p_undrop = 1.0 - p_dropout;
 
-    fmha_bwd_args args{};
-    args.q_ptr = q.data_ptr();
-    args.k_ptr = k.data_ptr();
-    args.v_ptr = v.data_ptr();
-    args.bias_ptr = attn_bias_ptr;
-    args.o_ptr = out.data_ptr();
-    args.lse_ptr = softmax_lse.data_ptr();
-    args.do_ptr = dout.data_ptr();
-    args.d_ptr = d.data_ptr();
-    args.rand_val_ptr = nullptr;
-    args.dq_ptr = dq.data_ptr();
-    args.dk_ptr = dk.data_ptr();
-    args.dv_ptr = dv.data_ptr();
-    args.dbias_ptr = dbias_ptr;
-    args.workspace_ptr = dq_acc.data_ptr();
-    args.sink_ptr = nullptr;
-    args.d_sink_ptr = nullptr;
-    args.seqstart_q_ptr = nullptr;
-    args.seqstart_k_ptr = nullptr;
-    args.seqlen_q_ptr = nullptr;
-    args.seqlen_k_ptr = nullptr;
-    args.cu_seqlen_q_ptr = nullptr;
-    args.cu_seqlen_k_ptr = nullptr;
-    args.seqlen_q = seqlen_q;
-    args.seqlen_k = seqlen_k;
-    args.batch = b;
-    args.max_seqlen_q = seqlen_q;
-    args.max_seqlen_k = seqlen_k;
-    args.hdim_q = hdim;
-    args.hdim_v = hdim;
-    args.nhead_q = h;
-    args.nhead_k = h_k;
-    args.scale = softmax_scale;
-    args.stride_q = stride_q;
-    args.stride_k = stride_k;
-    args.stride_v = stride_v;
-    args.stride_bias = stride_attn_bias;
-    args.stride_o = stride_o;
-    args.stride_randval = 0;
-    args.stride_do = stride_do;
-    args.stride_dq = stride_dq;
-    args.stride_dk = stride_dk;
-    args.stride_dv = stride_dv;
-    args.stride_dbias = stride_dbias;
-    args.nhead_stride_q = nhead_stride_q;
-    args.nhead_stride_k = nhead_stride_k;
-    args.nhead_stride_v = nhead_stride_v;
-    args.nhead_stride_bias = nhead_stride_bias;
-    args.nhead_stride_o = nhead_stride_o;
-    args.nhead_stride_randval = 0;
-    args.nhead_stride_do = nhead_stride_do;
-    args.nhead_stride_lsed = nhead_stride_lse;
-    args.nhead_stride_dq = nhead_stride_dq;
-    args.nhead_stride_dk = nhead_stride_dk;
-    args.nhead_stride_dv = nhead_stride_dv;
-    args.nhead_stride_dbias = nhead_stride_dbias;
-    args.batch_stride_q = batch_stride_q;
-    args.batch_stride_k = batch_stride_k;
-    args.batch_stride_v = batch_stride_v;
-    args.batch_stride_bias = batch_stride_bias;
-    args.batch_stride_o = batch_stride_o;
-    args.batch_stride_randval = 0;
-    args.batch_stride_do = batch_stride_do;
-    args.batch_stride_lsed = batch_stride_lse;
-    args.batch_stride_dq = batch_stride_dq;
-    args.batch_stride_dk = batch_stride_dk;
-    args.batch_stride_dv = batch_stride_dv;
-    args.batch_stride_dbias = batch_stride_dbias;
-    args.window_size_left = mask.left;
-    args.window_size_right = mask.right;
-    args.mask_type = static_cast<ck_tile::index_t>(mask.type);
-    args.p_drop = p_dropout;
-    args.p_undrop = p_undrop;
-    args.drop_seed_offset = drop_seed_offset;
-    return args;`;
+    return fmha_bwd_args{q.data_ptr(),
+        k.data_ptr(),
+        v.data_ptr(),
+        attn_bias_ptr,
+        out.data_ptr(),
+        softmax_lse.data_ptr(),
+        dout.data_ptr(),
+        d.data_ptr(),
+        nullptr,
+        dq.data_ptr(),
+        dk.data_ptr(),
+        dv.data_ptr(),
+        dbias_ptr,
+        dq_acc.data_ptr(),
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        seqlen_q,
+        seqlen_k,
+        b,
+        seqlen_q,
+        seqlen_k,
+        hdim,
+        hdim,
+        h,
+        h_k,
+        softmax_scale,
+        stride_q,
+        stride_k,
+        stride_v,
+        stride_attn_bias,
+        stride_o,
+        0,
+        stride_do,
+        stride_dq_acc,
+        stride_dq,
+        stride_dk,
+        stride_dv,
+        stride_dbias,
+        nhead_stride_q,
+        nhead_stride_k,
+        nhead_stride_v,
+        nhead_stride_bias,
+        nhead_stride_o,
+        0,
+        nhead_stride_do,
+        nhead_stride_lse,
+        nhead_stride_dq_acc,
+        nhead_stride_dq,
+        nhead_stride_dk,
+        nhead_stride_dv,
+        nhead_stride_dbias,
+        batch_stride_q,
+        batch_stride_k,
+        batch_stride_v,
+        batch_stride_bias,
+        batch_stride_o,
+        0,
+        batch_stride_do,
+        batch_stride_lse,
+        batch_stride_dq_acc,
+        batch_stride_dq,
+        batch_stride_dk,
+        batch_stride_dv,
+        batch_stride_dbias,
+        split_stride_dq_acc,
+        mask.left,
+        mask.right,
+        static_cast<ck_tile::index_t>(mask.type),
+        p_dropout,
+        p_undrop,
+        drop_seed_offset};`;
 }
 
 function b1CallSiteBlock(): string {
   return `        auto traits = get_ck_fmha_bwd_traits(
                 mask,
                 q_dtype_str,
-                seqlen_q,
-                seqlen_k,
-                batch_size,
                 head_size_8x,
-                num_heads,
-                num_heads_k,
                 is_dropout,
                 attn_bias_.has_value(),
                 bias_requires_grad,
@@ -241,34 +227,7 @@ function b1CallSiteBlock(): string {
         float t = fmha_bwd(traits, ck_args, stream_config);`;
 }
 
-/** worktree 缓存中 Run #32105033671 已写入的 B1-v1（错误 brace-list）→ v2 升级 */
-function buildB1V2UpgradeFromV1Points(): PatchPoint[] {
-  return [
-    {
-      name: "mha-bwd-ck-v2-insert-traits-fn",
-      before: `// ${B1_TMP_MARKER}: gfx120x skip fav_v3 — call fmha_bwd directly (no aiter::mha_bwd link)
-
-fmha_bwd_args get_ck_fmha_bwd_args`,
-      after: `// ${B1_TMP_MARKER}: gfx120x skip fav_v3 — call fmha_bwd directly (no aiter::mha_bwd link)
-
-${b1TraitsFunction()}fmha_bwd_args get_ck_fmha_bwd_args`,
-    },
-    {
-      name: "mha-bwd-ck-v2-remove-dq-acc-strides",
-      before: `    // dq_acc: (split, batch_size, nheads, seqlen_q, hdim)
-    ck_tile::index_t split_stride_dq_acc = dq_acc.stride(0);
-    ck_tile::long_index_t batch_stride_dq_acc = dq_acc.stride(1);
-    ck_tile::index_t stride_dq_acc = dq_acc.stride(3);
-    ck_tile::long_index_t nhead_stride_dq_acc = dq_acc.stride(2);
-
-    // bias:`,
-      after: `    // bias:`,
-    },
-    {
-      name: "mha-bwd-ck-v2-args-field-assignment",
-      before: `    float p_undrop = 1.0 - p_dropout;
-
-    return fmha_bwd_args{
+const B1_V1_BAD_RETURN = `    return fmha_bwd_args{
         q.data_ptr(),
         k.data_ptr(),
         v.data_ptr(),
@@ -341,12 +300,56 @@ ${b1TraitsFunction()}fmha_bwd_args get_ck_fmha_bwd_args`,
         p_dropout,  // p_drop
         p_undrop,
         drop_seed_offset
-    };`,
-      after: b1ArgsReturnBlock(),
-    },
-    {
-      name: "mha-bwd-ck-v2-call-site",
-      before: `        auto ck_args =
+    };`;
+
+const B1_V2_BAD_CALL_SITE = `        auto traits = get_ck_fmha_bwd_traits(
+                mask,
+                q_dtype_str,
+                seqlen_q,
+                seqlen_k,
+                batch_size,
+                head_size_8x,
+                num_heads,
+                num_heads_k,
+                is_dropout,
+                attn_bias_.has_value(),
+                bias_requires_grad,
+                deterministic);
+
+        auto ck_args =
+            get_ck_fmha_bwd_args(
+                mask,
+                q_dtype_str,
+                is_dropout,
+                attn_bias_.has_value(),
+                deterministic,
+                bias_requires_grad,
+                batch_size,
+                seqlen_q,
+                seqlen_k,
+                num_heads,
+                num_heads_k,
+                head_size_8x,
+                q,
+                k,
+                v,
+                attn_bias_,
+                grad_bias,
+                out,
+                softmax_lse,
+                dout_padded,
+                dq_accum,
+                softmax_d,
+                dq,
+                dk_expanded,
+                dv_expanded,
+                softmax_scale,
+                p_dropout,
+                drop_seed_offset);
+
+        float t = fmha_bwd(traits, ck_args, stream_config);`;
+
+const B1_V1_BAD_CALL_SITE = `        auto ck_args =
             get_ck_fmha_bwd_args(
                 mask,
                 q_dtype_str,
@@ -391,14 +394,46 @@ ${b1TraitsFunction()}fmha_bwd_args get_ck_fmha_bwd_args`,
             deterministic,
         };
 
-        float t = fmha_bwd(traits, ck_args, stream_config);`,
-      after: b1CallSiteBlock(),
-    },
-  ];
+        float t = fmha_bwd(traits, ck_args, stream_config);`;
+
+function buildInsertTraitsBeforeArgsPoint(): PatchPoint {
+  return {
+    name: "mha-bwd-ck-v3-insert-traits-fn",
+    before: `// ${B1_TMP_MARKER}: gfx120x skip fav_v3 — call fmha_bwd directly (no aiter::mha_bwd link)
+
+fmha_bwd_args get_ck_fmha_bwd_args`,
+    after: `// ${B1_TMP_MARKER}: gfx120x skip fav_v3 — call fmha_bwd directly (no aiter::mha_bwd link)
+
+${b1TraitsFunction()}fmha_bwd_args get_ck_fmha_bwd_args`,
+  };
 }
 
-/** 上游 aiter 版（cache miss 或未写入 v1 的 restore）→ 直接 v2 */
-function buildB1V2FromUpstreamPoints(): PatchPoint[] {
+function buildReplaceTraitsFnPoint(beforeFn: string): PatchPoint {
+  return {
+    name: "mha-bwd-ck-v3-fix-traits-fn",
+    before: beforeFn,
+    after: b1TraitsFunction(),
+  };
+}
+
+function buildReplaceArgsReturnPoint(beforeReturn: string): PatchPoint {
+  return {
+    name: "mha-bwd-ck-v3-fix-args-return",
+    before: beforeReturn,
+    after: b1ArgsReturnBlock(),
+  };
+}
+
+function buildReplaceCallSitePoint(beforeCall: string): PatchPoint {
+  return {
+    name: "mha-bwd-ck-v3-fix-call-site",
+    before: beforeCall,
+    after: b1CallSiteBlock(),
+  };
+}
+
+/** 上游 aiter 版 → v3 */
+function buildB1V3FromUpstreamPoints(): PatchPoint[] {
   return [
     {
       name: "mha-bwd-ck-drop-aiter-include",
@@ -409,7 +444,7 @@ function buildB1V2FromUpstreamPoints(): PatchPoint[] {
 #include <fmha_bwd.hpp>`,
     },
     {
-      name: "mha-bwd-ck-v2-header-and-traits",
+      name: "mha-bwd-ck-v3-header-and-traits",
       before: `namespace pytorch_flash {
 
 aiter::mha_bwd_args get_ck_fmha_bwd_args`,
@@ -419,20 +454,7 @@ aiter::mha_bwd_args get_ck_fmha_bwd_args`,
 
 ${b1TraitsFunction()}fmha_bwd_args get_ck_fmha_bwd_args`,
     },
-    {
-      name: "mha-bwd-ck-v2-remove-dq-acc-strides-upstream",
-      before: `    // dq_acc: (split, batch_size, nheads, seqlen_q, hdim)
-    ck_tile::index_t split_stride_dq_acc = dq_acc.stride(0);
-    ck_tile::long_index_t batch_stride_dq_acc = dq_acc.stride(1);
-    ck_tile::index_t stride_dq_acc = dq_acc.stride(3);
-    ck_tile::long_index_t nhead_stride_dq_acc = dq_acc.stride(2);
-
-    // bias:`,
-      after: `    // bias:`,
-    },
-    {
-      name: "mha-bwd-ck-v2-replace-aiter-return",
-      before: `    float p_undrop = 1.0 - p_dropout;
+    buildReplaceArgsReturnPoint(`    float p_undrop = 1.0 - p_dropout;
 
     return aiter::mha_bwd_args{
         // aiter args
@@ -527,12 +549,8 @@ ${b1TraitsFunction()}fmha_bwd_args get_ck_fmha_bwd_args`,
         p_dropout,  // p_drop
         p_undrop,
         drop_seed_offset
-    };`,
-      after: b1ArgsReturnBlock(),
-    },
-    {
-      name: "mha-bwd-ck-v2-call-site-upstream",
-      before: `        auto args =
+    };`),
+    buildReplaceCallSitePoint(`        auto args =
             get_ck_fmha_bwd_args(
                 mask,
                 q_dtype_str,
@@ -563,14 +581,166 @@ ${b1TraitsFunction()}fmha_bwd_args get_ck_fmha_bwd_args`,
                 p_dropout,
                 drop_seed_offset);
 
-        float t = aiter::mha_bwd(args, stream_config);`,
-      after: b1CallSiteBlock(),
-    },
+        float t = aiter::mha_bwd(args, stream_config);`),
   ];
 }
 
-function detectMhaBwdCkState(content: string): "v2" | "v1" | "upstream" {
-  if (content.includes(B1_V2_SENTINEL) && content.includes("args.workspace_ptr = dq_acc.data_ptr()")) {
+/** B1-v1 缓存（缺 hdim + 错误 traits）→ v3 */
+function buildB1V3UpgradeFromV1Points(): PatchPoint[] {
+  return [
+    buildInsertTraitsBeforeArgsPoint(),
+    buildReplaceArgsReturnPoint(`    float p_undrop = 1.0 - p_dropout;
+
+${B1_V1_BAD_RETURN}`),
+    buildReplaceCallSitePoint(B1_V1_BAD_CALL_SITE),
+  ];
+}
+
+/** B1-v2 缓存（CK develop 布局 / workspace_ptr）→ v3 */
+function buildB1V3UpgradeFromV2Points(): PatchPoint[] {
+  const v2TraitsFn = `fmha_bwd_traits get_ck_fmha_bwd_traits(const mask_info &mask,
+                                         std::string dtype,
+                                         int seqlen_q,
+                                         int seqlen_k,
+                                         int batch,
+                                         int head_size,
+                                         int nhead_q,
+                                         int nhead_k,
+                                         bool has_dropout,
+                                         bool enable_bias,
+                                         bool bias_requires_grad,
+                                         bool deterministic)
+{
+    return fmha_bwd_traits{seqlen_q,
+                           seqlen_k,
+                           batch,
+                           seqlen_q,
+                           seqlen_k,
+                           head_size,
+                           head_size,
+                           nhead_q,
+                           nhead_k,
+                           dtype,
+                           false,
+                           mask.type,
+                           enable_bias ? bias_enum::elementwise_bias : bias_enum::no_bias,
+                           bias_requires_grad,
+                           has_dropout,
+                           false,
+                           deterministic};
+}
+
+`;
+
+  const v2ArgsReturn = `    float p_undrop = 1.0 - p_dropout;
+
+    fmha_bwd_args args{};
+    args.q_ptr = q.data_ptr();
+    args.k_ptr = k.data_ptr();
+    args.v_ptr = v.data_ptr();
+    args.bias_ptr = attn_bias_ptr;
+    args.o_ptr = out.data_ptr();
+    args.lse_ptr = softmax_lse.data_ptr();
+    args.do_ptr = dout.data_ptr();
+    args.d_ptr = d.data_ptr();
+    args.rand_val_ptr = nullptr;
+    args.dq_ptr = dq.data_ptr();
+    args.dk_ptr = dk.data_ptr();
+    args.dv_ptr = dv.data_ptr();
+    args.dbias_ptr = dbias_ptr;
+    args.workspace_ptr = dq_acc.data_ptr();
+    args.sink_ptr = nullptr;
+    args.d_sink_ptr = nullptr;
+    args.seqstart_q_ptr = nullptr;
+    args.seqstart_k_ptr = nullptr;
+    args.seqlen_q_ptr = nullptr;
+    args.seqlen_k_ptr = nullptr;
+    args.cu_seqlen_q_ptr = nullptr;
+    args.cu_seqlen_k_ptr = nullptr;
+    args.seqlen_q = seqlen_q;
+    args.seqlen_k = seqlen_k;
+    args.batch = b;
+    args.max_seqlen_q = seqlen_q;
+    args.max_seqlen_k = seqlen_k;
+    args.hdim_q = hdim;
+    args.hdim_v = hdim;
+    args.nhead_q = h;
+    args.nhead_k = h_k;
+    args.scale = softmax_scale;
+    args.stride_q = stride_q;
+    args.stride_k = stride_k;
+    args.stride_v = stride_v;
+    args.stride_bias = stride_attn_bias;
+    args.stride_o = stride_o;
+    args.stride_randval = 0;
+    args.stride_do = stride_do;
+    args.stride_dq = stride_dq;
+    args.stride_dk = stride_dk;
+    args.stride_dv = stride_dv;
+    args.stride_dbias = stride_dbias;
+    args.nhead_stride_q = nhead_stride_q;
+    args.nhead_stride_k = nhead_stride_k;
+    args.nhead_stride_v = nhead_stride_v;
+    args.nhead_stride_bias = nhead_stride_bias;
+    args.nhead_stride_o = nhead_stride_o;
+    args.nhead_stride_randval = 0;
+    args.nhead_stride_do = nhead_stride_do;
+    args.nhead_stride_lsed = nhead_stride_lse;
+    args.nhead_stride_dq = nhead_stride_dq;
+    args.nhead_stride_dk = nhead_stride_dk;
+    args.nhead_stride_dv = nhead_stride_dv;
+    args.nhead_stride_dbias = nhead_stride_dbias;
+    args.batch_stride_q = batch_stride_q;
+    args.batch_stride_k = batch_stride_k;
+    args.batch_stride_v = batch_stride_v;
+    args.batch_stride_bias = batch_stride_bias;
+    args.batch_stride_o = batch_stride_o;
+    args.batch_stride_randval = 0;
+    args.batch_stride_do = batch_stride_do;
+    args.batch_stride_lsed = batch_stride_lse;
+    args.batch_stride_dq = batch_stride_dq;
+    args.batch_stride_dk = batch_stride_dk;
+    args.batch_stride_dv = batch_stride_dv;
+    args.batch_stride_dbias = batch_stride_dbias;
+    args.window_size_left = mask.left;
+    args.window_size_right = mask.right;
+    args.mask_type = static_cast<ck_tile::index_t>(mask.type);
+    args.p_drop = p_dropout;
+    args.p_undrop = p_undrop;
+    args.drop_seed_offset = drop_seed_offset;
+    return args;`;
+
+  return [
+    buildReplaceTraitsFnPoint(v2TraitsFn),
+    buildReplaceArgsReturnPoint(v2ArgsReturn),
+    buildReplaceCallSitePoint(B1_V2_BAD_CALL_SITE),
+  ];
+}
+
+/** v1 曾删除 dq_acc stride 变量；补回以匹配 varlen 布局 */
+function buildRestoreDqAccStridesPoint(): PatchPoint {
+  return {
+    name: "mha-bwd-ck-v3-restore-dq-acc-strides",
+    before: `    // bias: (batch_size, nheads, seqlen_q, seqlen_k)
+    void *attn_bias_ptr = nullptr;`,
+    after: `    // dq_acc: (split, batch_size, nheads, seqlen_q, hdim)
+    ck_tile::index_t split_stride_dq_acc = dq_acc.stride(0);
+    ck_tile::long_index_t batch_stride_dq_acc = dq_acc.stride(1);
+    ck_tile::index_t stride_dq_acc = dq_acc.stride(3);
+    ck_tile::long_index_t nhead_stride_dq_acc = dq_acc.stride(2);
+
+    // bias: (batch_size, nheads, seqlen_q, seqlen_k)
+    void *attn_bias_ptr = nullptr;`,
+  };
+}
+
+type MhaBwdCkPatchState = "v3" | "v2" | "v1" | "upstream";
+
+function detectMhaBwdCkState(content: string): MhaBwdCkPatchState {
+  if (content.includes(B1_V3_TRAITS_SENTINEL) && content.includes("hdim,\n        hdim,")) {
+    return "v3";
+  }
+  if (content.includes("args.workspace_ptr") || content.includes("return fmha_bwd_traits{seqlen_q,")) {
     return "v2";
   }
   if (
@@ -583,13 +753,13 @@ function detectMhaBwdCkState(content: string): "v2" | "v1" | "upstream" {
   if (content.includes("aiter::mha_bwd_args") || content.includes("aiter::mha_bwd(args")) {
     return "upstream";
   }
-  throw new Error("patch-tmp: unrecognized mha_bwd_ck.hip state (not upstream, v1, or v2)");
+  throw new Error("patch-tmp: unrecognized mha_bwd_ck.hip state (not upstream, v1, v2, or v3)");
 }
 
 /**
  * worktree cache hit 时的增量 B1 patch：skip fav_v3 场景下 mha_bwd_ck 直调 CK Tile fmha_bwd。
- * 支持 upstream / 已缓存 B1-v1（Run #32105033671 save）→ B1-v2 升级。
- * 不进入 pt-patch-hash，以保持 WORKTREE_CACHE_KEY 不变；成功后合入 04.patch.ts 并删除本模块。
+ * 布局对齐 PyTorch v2.13.0 mha_varlen_bwd_ck.hip（非 CK develop 新布局）。
+ * 支持 upstream / B1-v1 / B1-v2 缓存态升级；不进 pt-patch-hash。
  */
 export function runPatchTmp(options: { ptSrc: string }): void {
   const root = path.resolve(options.ptSrc);
@@ -610,16 +780,32 @@ export function runPatchTmp(options: { ptSrc: string }): void {
   const { content } = readNormalized(mhaBwdCk);
   const state = detectMhaBwdCkState(content);
 
-  if (state === "v2") {
-    console.log(`  OK mha-bwd-ck-b1-v2: already applied (${mhaBwdCk})`);
+  if (state === "v3") {
+    if (!content.includes("split_stride_dq_acc = dq_acc.stride")) {
+      console.log(`  OK mha-bwd-ck-b1-v3: restoring missing dq_acc stride vars`);
+      applyPoints(mhaBwdCk, [buildRestoreDqAccStridesPoint()]);
+    } else {
+      console.log(`  OK mha-bwd-ck-b1-v3: already applied (${mhaBwdCk})`);
+    }
+  } else if (state === "v2") {
+    console.log(`  OK mha-bwd-ck-b1-v3: upgrading cached B1-v2 → v3`);
+    const points = buildB1V3UpgradeFromV2Points();
+    if (!content.includes("split_stride_dq_acc = dq_acc.stride")) {
+      points.unshift(buildRestoreDqAccStridesPoint());
+    }
+    applyPoints(mhaBwdCk, points);
   } else if (state === "v1") {
-    console.log(`  OK mha-bwd-ck-b1-v2: upgrading cached B1-v1 → v2`);
-    applyPoints(mhaBwdCk, buildB1V2UpgradeFromV1Points());
+    console.log(`  OK mha-bwd-ck-b1-v3: upgrading cached B1-v1 → v3`);
+    const points = buildB1V3UpgradeFromV1Points();
+    if (!content.includes("split_stride_dq_acc = dq_acc.stride")) {
+      points.splice(1, 0, buildRestoreDqAccStridesPoint());
+    }
+    applyPoints(mhaBwdCk, points);
   } else {
-    console.log(`  OK mha-bwd-ck-b1-v2: applying from upstream`);
-    applyPoints(mhaBwdCk, buildB1V2FromUpstreamPoints());
+    console.log(`  OK mha-bwd-ck-b1-v3: applying from upstream`);
+    applyPoints(mhaBwdCk, buildB1V3FromUpstreamPoints());
   }
 
   deleteMhaBwdCkObj(root);
-  console.log(`Applied 04.patch-tmp B1-v2 at ${root} (GPU_ARCHS=${gpuArchsEnv})`);
+  console.log(`Applied 04.patch-tmp B1-v3 at ${root} (GPU_ARCHS=${gpuArchsEnv})`);
 }

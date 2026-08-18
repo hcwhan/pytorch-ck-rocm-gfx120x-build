@@ -66,7 +66,7 @@ program
 program
   .command("04.patch-tmp")
   .description(
-    "worktree cache hit 增量 B1-v2：mha_bwd_ck 字段赋值直调 fmha_bwd；支持 v1 缓存升级（不进 patch hash）",
+    "worktree cache hit 增量 B1-v3：对齐 mha_varlen_bwd_ck 直调 fmha_bwd；支持 v1/v2 缓存升级（不进 patch hash）",
   )
   .requiredOption("--pt-src <path>")
   .action((opts) => {
