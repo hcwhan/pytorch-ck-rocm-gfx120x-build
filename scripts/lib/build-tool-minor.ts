@@ -9,7 +9,7 @@ export function parseRocmClangFullVersion(raw: string): string {
   return match[1];
 }
 
-export function parseMinorVersion(raw: string, tool: string): string {
+function parseMinorVersion(raw: string, tool: string): string {
   const match = raw.match(/(\d+)\.(\d+)/);
   if (!match) {
     throw new Error(`Cannot parse ${tool} minor version from: ${raw}`);

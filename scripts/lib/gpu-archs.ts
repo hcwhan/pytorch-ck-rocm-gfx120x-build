@@ -14,7 +14,7 @@ const HIP_TO_CK_TARGET: Record<string, (typeof CANONICAL_CK_TARGET_ORDER)[number
   };
 
 /** 上游 v2.13.0 fav_v3（AITER MI3xx ASM bwd）所针对的 HIP arch；与 aten/CMakeLists MI3xx whitelist 一致。 */
-export const MI3XX_FAV_V3_HIP_ARCHS = ["gfx942", "gfx950"] as const;
+const MI3XX_FAV_V3_HIP_ARCHS = ["gfx942", "gfx950"] as const;
 
 export function gpuArchListIncludesMi3xxForFavV3(gpuArchs: string): boolean {
   const mi3xx = new Set<string>(
