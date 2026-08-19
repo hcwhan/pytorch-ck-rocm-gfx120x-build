@@ -46,7 +46,7 @@ runs:
         command: '${{ steps.prepare.outputs.command }}'
         args: '${{ steps.prepare.outputs.args }}'
         job-start-time: ${{ inputs.job-start-time }}
-        limit-hours: "0.5"
+        limit-hours: "5"
 
     - name: Post-build cache save
       if: always() && steps.run-task.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-task.conclusion == 'success') && steps.run-task.outputs.force-killed != 'true'
