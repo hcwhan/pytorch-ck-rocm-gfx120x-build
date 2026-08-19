@@ -9,7 +9,7 @@ on:
         required: false
         default: "4"
       use_cache:
-        description: "true：restore worktree（含 build/）；compile 非 skipped 即 save worktree+ccache（含失败/看门狗；ABORT_FORCE_KILLED 除外）。false：不 restore（仍 lookup 探测 exists；used=false）；仅 compile 成功时 save；ccache 同规则"
+        description: "true：restore worktree（含 build/）；compile 非 skipped 即 save worktree+ccache（含失败/看门狗；force-killed 除外）。false：不 restore（仍 lookup 探测 exists；used=false）；仅 compile 成功时 save；ccache 同规则"
         type: boolean
         required: false
         default: true
@@ -49,23 +49,32 @@ jobs:
       - name: Checkout build repo
         uses: actions/checkout@v7
 
+      - name: Record job start
+        id: job-start
+        uses: hcwhan/actions/kit/watchdog/job-start@main
+
       - name: Bootstrap build job
         id: bootstrap
         uses: "./.github/actions/A00.pt-job-bootstrap"
 
       - name: Compile PyTorch and save worktree + ccache
+        id: build
         uses: "./.github/actions/A01.pt-build-with-cache"
         with:
           pt-src: ${{ env.PT_SRC }}
           use-cache: ${{ env.USE_CACHE }}
-          run: npx tsx scripts/cli.ts 08.build --pt-src $env:PT_SRC
+          job-start-time: ${{ steps.job-start.outputs.job-start-time }}
 
       - name: Retry after watchdog abort
-        if: always() && !cancelled() && env.ABORT_TRIGGERED == 'true' && env.COMPILE_COMPLETE != 'true' && env.ABORT_FORCE_KILLED != 'true'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: npx tsx scripts/cli.ts 09-retry
+        if: always() && !cancelled() && steps.build.outputs.should-retry == 'true'
+        uses: hcwhan/actions/kit/watchdog/dispatch-retry@main
+        with:
+          should-retry: ${{ steps.build.outputs.should-retry }}
+          use-cache: ${{ env.USE_CACHE }}
+          retry-count: ${{ env.RETRY_COUNT }}
+          workflow-file: build-pytorch-ck-gfx120x-serial.yml
+          dispatch-inputs: |
+            {"ninja_workers":"${{ env.MAX_JOBS }}","use_cache":"${{ env.USE_CACHE }}","publish_release":"${{ env.PUBLISH_RELEASE }}"}
 
       - name: Write worktree cache metadata
         if: success()
@@ -83,7 +92,7 @@ jobs:
       - name: Package torch wheel
         if: success()
         shell: pwsh
-        run: npx tsx scripts/cli.ts 10.wheel --pt-src $env:PT_SRC --dist-dir $env:GITHUB_WORKSPACE\dist
+        run: npx tsx scripts/cli.ts 09.wheel --pt-src $env:PT_SRC --dist-dir $env:GITHUB_WORKSPACE\dist
 
       - name: Verify wheel, upload artifact, and publish
         if: success()

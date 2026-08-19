@@ -1,20 +1,15 @@
 import { existsSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
-import { run, spawnAsync } from "../lib/exec.js";
-import { appendGithubEnv } from "../lib/github.js";
+
+import { appendGithubOutput } from "../lib/github.js";
 import { initBuildEnv } from "../lib/init-build-env.js";
 import { requireMaxJobs } from "../lib/max-jobs.js";
 import { resolveBuildDir } from "../lib/paths.js";
-import { createWatchdog } from "../lib/watchdog.js";
 
 const PYTHON = "python";
 
-/**
- * Run `ninja -d explain -n` and log dirty reasons.
- * ninja writes explain reasons ("ninja explain: ...") to stderr,
- * planned edges ([N/M]) to stdout. We capture both and categorize.
- */
+// 运行 ninja -d explain -n 并记录 dirty 原因（cache-hit 路径诊断）
 function explainNinja(buildDir: string, label: string): void {
   const result = spawnSync("ninja", [
     "-d", "explain", "-n", "-C", buildDir, "install",
@@ -67,7 +62,18 @@ function explainNinja(buildDir: string, label: string): void {
   console.log("=== end explain ===");
 }
 
-export async function runBuild(options: { ptSrc: string }): Promise<void> {
+// 决定 compile 命令并写入 GITHUB_OUTPUT（command + args JSON）
+export function runPrepareBuild(options: {
+  ptSrc: string;
+  exportGithubEnv?: boolean;
+}): void {
+  const exportGithubEnv = options.exportGithubEnv ?? false;
+  if (process.env.GITHUB_ENV && !exportGithubEnv) {
+    throw new Error(
+      "08.prepare must be called with --export-github-env when GITHUB_ENV is set",
+    );
+  }
+
   const ptSrc = path.resolve(options.ptSrc);
   try {
     statSync(ptSrc);
@@ -75,67 +81,42 @@ export async function runBuild(options: { ptSrc: string }): Promise<void> {
     throw new Error(`pytorch source not found: ${ptSrc}`);
   }
 
-  initBuildEnv({ ptSrc });
+  initBuildEnv({ ptSrc, exportGithubEnv });
 
   const buildDir = path.join(ptSrc, "build");
   const buildNinja = path.join(buildDir, "build.ninja");
   const cacheHit = process.env.WORKTREE_CACHE_USED === "true";
   const maxJobs = requireMaxJobs();
 
-  const jobStartRaw = Number(process.env.JOB_START_TIME);
-  const jobStartMs = Number.isFinite(jobStartRaw) ? jobStartRaw : Date.now();
-  if (!Number.isFinite(jobStartRaw)) {
-    console.warn("JOB_START_TIME not set; using current time as job start");
-  }
-
-  let buildHandle: ReturnType<typeof spawnAsync>;
   if (cacheHit && existsSync(buildNinja)) {
     explainNinja(buildDir, "before-build");
     console.log(
       `Worktree cache hit: ninja -C ${buildDir} install (-j ${maxJobs})`,
     );
-    buildHandle = spawnAsync("ninja", [
-      "-C",
-      buildDir,
-      "install",
-      "-j",
-      String(maxJobs),
-    ]);
-  } else {
-    console.log("Running setup.py build (configure if needed, then cmake build)");
-    const buildScript = path.join(resolveBuildDir(), "build-pytorch-steps.py");
-    buildHandle = spawnAsync(PYTHON, [
+    appendGithubOutput({
+      command: "ninja",
+      args: JSON.stringify([
+        "-C",
+        buildDir,
+        "install",
+        "-j",
+        String(maxJobs),
+      ]),
+    });
+    return;
+  }
+
+  console.log("Running setup.py build (configure if needed, then cmake build)");
+  const buildScript = path.join(resolveBuildDir(), "build-pytorch-steps.py");
+  appendGithubOutput({
+    command: PYTHON,
+    args: JSON.stringify([
       buildScript,
       "--step",
       "build",
       "--pt-src",
       ptSrc,
       "-v",
-    ]);
-  }
-
-  const watchdog = createWatchdog(buildHandle.child, jobStartMs);
-
-  let exitCode: number | null;
-  try {
-    ({ exitCode } = await buildHandle.completed);
-  } finally {
-    await watchdog.whenAbortSettled();
-    watchdog.stop();
-  }
-
-  if (exitCode === 0) {
-    appendGithubEnv({ COMPILE_COMPLETE: "true" });
-    if (process.env.CCACHE_DIR?.trim()) {
-      run("ccache", ["--show-stats"]);
-    }
-    console.log("PyTorch build step complete");
-    return;
-  }
-
-  if (watchdog.wasAborted()) {
-    throw new Error("Build interrupted by watchdog");
-  }
-
-  throw new Error(`build failed (exit ${exitCode})`);
+    ]),
+  });
 }

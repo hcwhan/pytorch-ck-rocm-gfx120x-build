@@ -1,21 +1,31 @@
 import { appendFileSync } from "node:fs";
 
-export function appendGithubEnv(vars: Record<string, string>): void {
-  const file = process.env.GITHUB_ENV;
+// Windows PATH/INCLUDE/args JSON 等常含 %ProgramFiles%；换行或 % 需 heredoc 以免 GITHUB_* 解析出错
+function formatGithubFileEntry(name: string, value: string): string {
+  if (!/[\n\r%]/.test(value)) {
+    return `${name}=${value}\n`;
+  }
+  const delimiter = `GH_FILE_${name}`;
+  return `${name}<<${delimiter}\n${value}\n${delimiter}\n`;
+}
+
+function appendGithubFile(
+  file: string | undefined,
+  fileLabel: string,
+  vars: Record<string, string>,
+): void {
   if (!file) {
-    throw new Error("GITHUB_ENV is not set");
+    throw new Error(`${fileLabel} is not set`);
   }
   for (const [name, value] of Object.entries(vars)) {
-    appendFileSync(file, `${name}=${value}\n`, "utf8");
+    appendFileSync(file, formatGithubFileEntry(name, value), "utf8");
   }
 }
 
+export function appendGithubEnv(vars: Record<string, string>): void {
+  appendGithubFile(process.env.GITHUB_ENV, "GITHUB_ENV", vars);
+}
+
 export function appendGithubOutput(vars: Record<string, string>): void {
-  const file = process.env.GITHUB_OUTPUT;
-  if (!file) {
-    throw new Error("GITHUB_OUTPUT is not set");
-  }
-  for (const [name, value] of Object.entries(vars)) {
-    appendFileSync(file, `${name}=${value}\n`, "utf8");
-  }
+  appendGithubFile(process.env.GITHUB_OUTPUT, "GITHUB_OUTPUT", vars);
 }

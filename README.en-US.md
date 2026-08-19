@@ -79,27 +79,27 @@ Push to `main` does **not** auto-trigger builds.
 | Input | Default | Description |
 |-------|---------|-------------|
 | `ninja_workers` | `4` | Ninja parallel workers (use `2` if OOM) |
-| `use_cache` | `true` | When `true`, restore worktree; save after compile when not skipped (includes failure/watchdog abort; except `ABORT_FORCE_KILLED`). When `false`, skip restore (still probes `exists`; `used=false`); save only after a successful compile |
+| `use_cache` | `true` | When `true`, restore worktree; save after compile when not skipped (includes failure/watchdog abort; except `force-killed`). When `false`, skip restore (still probes `exists`; `used=false`); save only after a successful compile |
 | `publish_release` | `true` | Set `false` to skip GitHub Release upload |
 | `retry_count` | `0` | Auto-incremented by watchdog retry; keep the default when triggering manually; **do not change** |
 
 ### Watchdog and auto-retry
 
-GitHub-hosted runner jobs have a **6-hour** hard limit. Compile uses a **5-hour** watchdog from A00 bootstrap step one: on expiry, 3× SIGINT graceful abort → save worktree + ccache → auto dispatch retry (`retry_count` increments internally, default `0`, **give up at ≥8**; **do not change** when triggering manually).
+GitHub-hosted runner jobs have a **6-hour** hard limit. A **5-hour** deadline from workflow step one (`watchdog/job-start`): on expiry, 3× SIGINT graceful abort → save worktree + ccache → `watchdog/dispatch-retry` auto dispatch (`retry_count` increments internally, default `0`, **give up at ≥8**; **do not change** when triggering manually).
 
 | Condition | Behavior |
 |-----------|----------|
 | `use_cache=true` (default) | Save cache and auto-retry after abort |
 | `use_cache=false` | No save on compile failure; **no** auto-retry |
-| `taskkill` after 3× SIGINT | No save, no retry (`ABORT_FORCE_KILLED`) |
+| `taskkill` after 3× SIGINT | No save, no retry (`force-killed`) |
 
-wheel / verify / publish do not run unless compile succeeds. `wheel.manifest.json` `dispatch` records `retry_count` and other workflow snapshot fields (see schema below). **Serial** runs `09-retry` inside the compile job on watchdog abort (ordinary compile failure does not retry). See [docs/watchdog-design.md](docs/watchdog-design.md).
+wheel / verify / publish do not run unless compile succeeds. `wheel.manifest.json` `dispatch` records `retry_count` and other workflow snapshot fields (see schema below). **Serial** triggers retry via `watchdog/dispatch-retry@main` when `should-retry == true` (ordinary compile failure does not retry).
 
 ### Serial (`build-pytorch-ck-gfx120x-serial.yml`)
 
 | Job | Role | Timeout |
 |-----|------|---------|
-| `compile-and-wheel` | bootstrap (toolchain + worktree restore + verify + mtime pin), `08.build` + `09-retry`/`10.wheel`, CPU smoke test | 6 h (GitHub limit; compile bounded by 5h watchdog) |
+| `compile-and-wheel` | job-start + bootstrap + `08.prepare`/`watchdog/run` + dispatch-retry + `09.wheel`, CPU smoke test | 6 h (GitHub limit; compile bounded by 5h watchdog) |
 
 **Worktree cache** (entire `C:\pt\pytorch`: patched source + hipify + `build/`):
 
@@ -120,17 +120,16 @@ A separate **pip toolchain cache** (`PIP_TOOLCHAIN_CACHE_KEY`: `pt-pip-toolchain
 
 ### Build stages
 
-After bootstrap (`01.config`–`07.pin-mtimes`, via A00), the serial workflow runs CLI `08`–`12` in order; `10.wheel` invokes `build/build-pytorch-steps.py --step wheel`:
+After bootstrap (`01.config`–`07.pin-mtimes`, via A00), the serial workflow runs CLI `08`–`11` in order; `09.wheel` invokes `build/build-pytorch-steps.py --step wheel`:
 
 | CLI | setuptools step | Role |
 |-----|-----------------|------|
-| `08.build` | `build` | cache-hit: `ninja -C build install`; cache-miss: `setup.py build` (via `build-pytorch-steps.py --step build`) |
-| `09-retry` | — | Dispatch retry workflow after watchdog abort (after A01.1 save; `if: always()` guard; skipped on success path) |
-| `10.wheel` | `wheel` | `setup.py bdist_wheel`, copies the single `.whl` to `--dist-dir` |
-| `11.verify` | — | CPU wheel smoke test (structure/CK symbols/SHA256/manifest + pip install + `is_ck_sdpa_available()`) |
-| `12.publish` | — | Prepare GitHub Release metadata (`publish_release=true`, via A99) |
+| `08.prepare` | `prepare` | Initialize build env and output command/args; forwarded to `watchdog/run` by A01 |
+| `09.wheel` | `wheel` | `setup.py bdist_wheel`, copies the single `.whl` to `--dist-dir` |
+| `10.verify` | — | CPU wheel smoke test (structure/CK symbols/SHA256/manifest + pip install + `is_ck_sdpa_available()`) |
+| `11.publish` | — | Prepare GitHub Release metadata (`publish_release=true`, via A99) |
 
-Success path: `npx tsx scripts/cli.ts 08.build` → `10.wheel` → `11.verify` → `12.publish`. On watchdog abort, `09-retry` runs after `08.build`. Equivalent: `npm run pt -- 08.build` (CLI program name `pt-build`).
+Success path: A01 `watchdog/run` succeeds → `09.wheel` → `10.verify` → `11.publish`. On watchdog graceful abort, A01.1 save then workflow calls `watchdog/dispatch-retry`.
 
 Env is set uniformly via `scripts/lib/init-build-env.ts` (includes `SOURCE_DATE_EPOCH` from `pytorch.build_commit_date`).
 
@@ -153,7 +152,7 @@ gh release list
 gh release download torch-ck-cp312-rocm7.14.0-gfx120x-serial-build123 -D .\dist
 ```
 
-`wheel.manifest.json` is written by `11.verify` (uploaded via `A99.pt-verify-publish` in CI). Main fields:
+`wheel.manifest.json` is written by `10.verify` (uploaded via `A99.pt-verify-publish` in CI). Main fields:
 
 | Field | Meaning |
 |-------|---------|
@@ -172,10 +171,10 @@ torch-*+ck.rocm7.14.0.gfx120x*-cp312-cp312-win_amd64.whl
 
 | Check | Script |
 |-------|--------|
-| CI smoke test (CPU) | `npx tsx scripts/cli.ts 11.verify --dist-dir dist --build-caches dist\build-caches.json` |
+| CI smoke test (CPU) | `npx tsx scripts/cli.ts 10.verify --dist-dir dist --build-caches dist\build-caches.json` |
 | Pre-deploy GPU smoke test (gfx120x hardware) | `python test/gpu-smoke-test.py -w .` |
 
-Smoke test (`11.verify`, CPU): wheel filename/structure (CK fwd/bwd dim markers) → SHA256 / manifest → pip install → `torch.backends.cuda.is_ck_sdpa_available()`. GPU CK SDPA fwd/bwd is in `test/gpu-smoke-test.py` (**pip install the wheel first**; run manually on gfx120x hardware before deploy; does not replace `11.verify`; uses `sdpa_kernel(SDPBackend.FLASH_ATTENTION)` under `TORCH_ROCM_FA_PREFER_CK=1` so fwd/bwd must use CK, not math fallback).
+Smoke test (`10.verify`, CPU): wheel filename/structure (CK fwd/bwd dim markers) → SHA256 / manifest → pip install → `torch.backends.cuda.is_ck_sdpa_available()`. GPU CK SDPA fwd/bwd is in `test/gpu-smoke-test.py` (**pip install the wheel first**; run manually on gfx120x hardware before deploy; does not replace `10.verify`; uses `sdpa_kernel(SDPBackend.FLASH_ATTENTION)` under `TORCH_ROCM_FA_PREFER_CK=1` so fwd/bwd must use CK, not math fallback).
 
 ## ComfyUI install
 

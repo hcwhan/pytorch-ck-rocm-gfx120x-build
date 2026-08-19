@@ -172,9 +172,9 @@ def build_only(pt_src: Path, *, verbose: bool = False) -> None:
 
 
 def build_wheel(pt_src: Path, *, verbose: bool = False) -> None:
-    # 08.build 已完成 ninja/cmake install（产物在 PT 源码树 torch/）。
+    # compile（watchdog/run spawn）已完成 ninja/cmake install（产物在 PT 源码树 torch/）。
     # setup.py 默认在 bdist_wheel 前会 build_deps() -> cmake --build install，
-    # 与 08.build 的 ninja -C 路径重复且可能触发 CMake reconfigure。
+    # 与 compile 的 ninja -C 路径重复且可能触发 CMake reconfigure。
     # 运行时 patch setup.py 使 PYTORCH_CK_SKIP_BUILD_DEPS=1 时跳过 build_deps；
     # build 仅同步 torch/ -> build/lib；bdist_wheel --skip-build 只打包。
     _ensure_setup_skip_build_deps_patch(pt_src)

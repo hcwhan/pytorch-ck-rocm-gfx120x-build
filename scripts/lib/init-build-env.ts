@@ -1,13 +1,184 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+
 import { run } from "./exec.js";
+import { appendGithubEnv } from "./github.js";
+import { CMAKE_CONFIGURE_QUIET_FLAGS } from "./cmake-configure-quiet-flags.js";
 import { requireMaxJobs } from "./max-jobs.js";
 import { getRocmSdkPaths } from "./rocm-sdk-paths.js";
 import { requireLockEnv } from "./require-env.js";
-import { CMAKE_CONFIGURE_QUIET_FLAGS } from "./cmake-configure-quiet-flags.js";
 import { WINDOWS_CLANG_WARNING_SUPPRESS_FLAGS } from "./windows-clang-warning-flags.js";
 
 const PYTHON = "python";
+
+// initBuildEnv 写入或覆盖的 env 键（供 export 至 GITHUB_ENV）
+const BUILD_ENV_VAR_NAMES = [
+  "MAX_JOBS",
+  "USE_ROCM",
+  "USE_KINETO",
+  "USE_DISTRIBUTED",
+  "USE_ROCM_CK_SDPA",
+  "PYTORCH_ROCM_ARCH",
+  "DISTUTILS_USE_SDK",
+  "BUILD_TEST",
+  "USE_CUDA",
+  "USE_FLASH_ATTENTION",
+  "USE_MEM_EFF_ATTENTION",
+  "SOURCE_DATE_EPOCH",
+  "TORCH_CUDA_ARCH_LIST",
+  "CMAKE_BUILD_TYPE",
+  "CMAKE_SUPPRESS_REGENERATION",
+  "CMAKE_ARGS",
+  "PYTORCH_BUILD_VERSION",
+  "PYTORCH_BUILD_NUMBER",
+  "ROCM_HOME",
+  "ROCM_PATH",
+  "HIP_PATH",
+  "HIP_INCLUDE_PATH",
+  "HIP_DEVICE_LIB_PATH",
+  "DEVICE_LIB_PATH",
+  "CPATH",
+  "INCLUDE",
+  "PATH",
+  "libuv_ROOT",
+  "LIBUV_ROOT",
+  "LIB",
+  "CC",
+  "CXX",
+  "CFLAGS",
+  "CXXFLAGS",
+  "CMAKE_C_COMPILER_LAUNCHER",
+  "CMAKE_CXX_COMPILER_LAUNCHER",
+  "CCACHE_DIR",
+  "CCACHE_COMPRESS",
+  "CCACHE_BASEDIR",
+  "CCACHE_SLOPPINESS",
+  "CCACHE_MAXSIZE",
+] as const;
+
+// setup-msvc-dev / vcvarsall 写入、compile/wheel 需跨 step 继承的 MSVC/SDK 变量（仅 export 已存在项）
+const PASSTHROUGH_MSVC_ENV_VAR_NAMES = [
+  "CL",
+  "_CL_",
+  "LINK",
+  "_LINK_",
+  "ExternalIncludePath",
+  "VCToolsInstallDir",
+  "VCToolsRedistDir",
+  "VCToolsVersion",
+  "VCINSTALLDIR",
+  "VSINSTALLDIR",
+  "LIBPATH",
+  "UniversalCRTSdkDir",
+  "UCRTVersion",
+  "WindowsLibPath",
+  "WindowsSdkBinPath",
+  "WindowsSdkDir",
+  "WindowsSDKLibVersion",
+  "WindowsSDKVersion",
+] as const;
+
+function normalizePathListEntry(entry: string): string {
+  return entry.toLowerCase().replace(/\\/g, "/");
+}
+
+function assertMsvcSdkPathListEnv(name: string, value: string): void {
+  const normalized = normalizePathListEntry(value);
+  const hasMsvcSdk =
+    normalized.includes("microsoft visual studio") ||
+    normalized.includes("windows kits") ||
+    normalized.includes("/vc/tools/");
+  if (!hasMsvcSdk) {
+    throw new Error(
+      `exportGithubEnv: ${name} must include MSVC/SDK paths from setup-msvc-dev (bootstrap); check A00.1 Setup MSVC ran before 08.prepare`,
+    );
+  }
+}
+
+function assertPathListContainsDir(name: string, dir: string): void {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(
+      `exportGithubEnv: ${name} must be set when libuv is configured (initBuildEnv prepend)`,
+    );
+  }
+  const normalizedDir = normalizePathListEntry(dir);
+  if (
+    !value
+      .split(";")
+      .map((entry) => normalizePathListEntry(entry.trim()))
+      .some((entry) => entry === normalizedDir || entry.startsWith(`${normalizedDir}/`))
+  ) {
+    throw new Error(
+      `exportGithubEnv: ${name} must include libuv path ${dir}`,
+    );
+  }
+}
+
+function prependPathListEnv(name: string, prefix: string): void {
+  const current = process.env[name];
+  process.env[name] = current ? `${prefix};${current}` : prefix;
+}
+
+function assertBuildEnvExportComplete(): void {
+  for (const name of BUILD_ENV_VAR_NAMES) {
+    if (process.env[name] === undefined) {
+      throw new Error(
+        `exportGithubEnv: ${name} must be set by initBuildEnv before export`,
+      );
+    }
+  }
+}
+
+// 将编译 env 追加至 GITHUB_ENV（供后续 watchdog/run spawn 继承）
+function exportBuildEnvToGithub(): void {
+  const ccacheDir = process.env.CCACHE_DIR?.trim();
+  if (!ccacheDir) {
+    throw new Error(
+      "CCACHE_DIR must be set before exportGithubEnv (A00.1 Export ccache directory)",
+    );
+  }
+  if (!process.env.CCACHE_COMPRESS?.trim()) {
+    throw new Error(
+      "CCACHE_COMPRESS must be set before exportGithubEnv (A00.1 Export ccache directory)",
+    );
+  }
+
+  const include = process.env.INCLUDE?.trim();
+  const lib = process.env.LIB?.trim();
+  if (!include || !lib) {
+    throw new Error(
+      "INCLUDE and LIB must be set before exportGithubEnv (setup-msvc-dev in bootstrap)",
+    );
+  }
+  assertMsvcSdkPathListEnv("INCLUDE", include);
+  assertMsvcSdkPathListEnv("LIB", lib);
+
+  const libuvRoot = (
+    process.env.libuv_ROOT ||
+    process.env.LIBUV_ROOT ||
+    ""
+  ).trim();
+  if (libuvRoot) {
+    const libuvLib = path.join(libuvRoot, "lib");
+    assertPathListContainsDir("LIB", libuvLib);
+    assertPathListContainsDir("LIBPATH", libuvLib);
+  }
+
+  assertBuildEnvExportComplete();
+
+  const vars: Record<string, string> = {};
+  for (const name of [
+    ...BUILD_ENV_VAR_NAMES,
+    ...PASSTHROUGH_MSVC_ENV_VAR_NAMES,
+  ]) {
+    const value = process.env[name];
+    if (value !== undefined) {
+      vars[name] = value;
+    }
+  }
+  appendGithubEnv(vars);
+}
 
 function applyCcacheEnv(ptSrc: string): void {
   const ccacheDir = process.env.CCACHE_DIR?.trim();
@@ -31,6 +202,7 @@ function applyCcacheEnv(ptSrc: string): void {
 export function initBuildEnv(options: {
   ptSrc: string;
   installRequirements?: boolean;
+  exportGithubEnv?: boolean;
 }): void {
   const maxJobs = requireMaxJobs();
   const ptSrc = path.resolve(options.ptSrc);
@@ -101,9 +273,8 @@ export function initBuildEnv(options: {
     process.env.CPATH = process.env.CPATH
       ? `${libuvInclude};${process.env.CPATH}`
       : libuvInclude;
-    process.env.LIB = process.env.LIB
-      ? `${libuvLib};${process.env.LIB}`
-      : libuvLib;
+    prependPathListEnv("LIB", libuvLib);
+    prependPathListEnv("LIBPATH", libuvLib);
     process.env.PATH = `${libuvBin};${process.env.PATH}`;
   }
 
@@ -138,6 +309,10 @@ export function initBuildEnv(options: {
       ],
       { quiet: true },
     );
+  }
+
+  if (options.exportGithubEnv) {
+    exportBuildEnvToGithub();
   }
 
   console.log("Build env ready");

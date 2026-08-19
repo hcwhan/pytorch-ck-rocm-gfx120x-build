@@ -79,27 +79,27 @@
 | 输入 | 默认 | 说明 |
 |------|------|------|
 | `ninja_workers` | `4` | Ninja 并行 worker 数（OOM 时可改为 `2`） |
-| `use_cache` | `true` | `true` 时 restore；compile 非 skipped 即 save（含失败/看门狗；`ABORT_FORCE_KILLED` 除外）。`false` 时不 restore（仍 lookup 探测 `exists`；`used=false`）；仅 compile 成功时 save |
+| `use_cache` | `true` | `true` 时 restore；compile 非 skipped 即 save（含失败/看门狗；`force-killed` 除外）。`false` 时不 restore（仍 lookup 探测 `exists`；`used=false`）；仅 compile 成功时 save |
 | `publish_release` | `true` | 设为 `false` 时跳过 GitHub Release 上传 |
 | `retry_count` | `0` | 看门狗 auto-retry 内部递增；手动触发时保持默认，**勿改** |
 
 ### 看门狗与自动 retry
 
-GitHub-hosted runner 的 job 硬上限为 **6 小时**。compile 自 A00 bootstrap 第一步起算 **5 小时**看门狗：到期后 3× SIGINT 优雅中断 → save worktree + ccache → 自动 dispatch retry（`retry_count` 内部递增，默认 `0`，**≥8 放弃**；手动触发时保持默认，**勿改**）。
+GitHub-hosted runner 的 job 硬上限为 **6 小时**。自 workflow 第一步 `watchdog/job-start` 起 **5 小时** deadline：到期后 3× SIGINT 优雅中断 → save worktree + ccache → `watchdog/dispatch-retry` 自动 dispatch retry（`retry_count` 内部递增，默认 `0`，**≥8 放弃**；手动触发时保持默认，**勿改**）。
 
 | 条件 | 行为 |
 |------|------|
 | `use_cache=true`（默认） | 中断后 save cache 并 auto-retry |
 | `use_cache=false` | compile 失败时不 save；**不** auto-retry |
-| 3× SIGINT 后需 `taskkill` | 不 save、不 retry（`ABORT_FORCE_KILLED`） |
+| 3× SIGINT 后需 `taskkill` | 不 save、不 retry（`force-killed`） |
 
-wheel / verify / publish 在 compile 未成功时不运行。`wheel.manifest.json` 的 `dispatch` 含 `retry_count` 等 workflow 快照（见下文 schema）。**serial** 在 compile job 内看门狗中止时 `09-retry`（普通 compile 失败不 retry）。详见 [docs/watchdog-design.md](docs/watchdog-design.md)。
+wheel / verify / publish 在 compile 未成功时不运行。`wheel.manifest.json` 的 `dispatch` 含 `retry_count` 等 workflow 快照（见下文 schema）。**serial** 在 `should-retry == true` 时由 `watchdog/dispatch-retry@main` 触发 retry（普通 compile 失败不 retry）。
 
 ### 串行（`build-pytorch-ck-gfx120x-serial.yml`）
 
 | Job | 作用 | 超时 |
 |-----|------|------|
-| `compile-and-wheel` | bootstrap（toolchain + worktree restore + verify + mtime pin）、`08.build` + `09-retry`/`10.wheel`、CPU smoke test | 6 h（GitHub 上限；compile 受 5h 看门狗约束） |
+| `compile-and-wheel` | job-start + bootstrap + `08.prepare`/`watchdog/run` + dispatch-retry + `09.wheel`、CPU smoke test | 6 h（GitHub 上限；compile 受 5h 看门狗约束） |
 
 **Worktree cache**（整棵 `C:\pt\pytorch`：patch 后源码 + hipify + `build/`）：
 
@@ -120,17 +120,16 @@ wheel / verify / publish 在 compile 未成功时不运行。`wheel.manifest.jso
 
 ### 构建阶段
 
-串行 workflow 在 bootstrap（`01.config`–`07.pin-mtimes`，见 A00）之后，按 CLI 序号执行 `08`–`12`；`10.wheel` 经 `build/build-pytorch-steps.py --step wheel` 打 wheel：
+串行 workflow 在 bootstrap（`01.config`–`07.pin-mtimes`，见 A00）之后，按 CLI 序号执行 `08`–`11`；`09.wheel` 经 `build/build-pytorch-steps.py --step wheel` 打 wheel：
 
 | CLI | setuptools step | 作用 |
 |-----|-----------------|------|
-| `08.build` | `build` | cache-hit：`ninja -C build install`；cache-miss：`setup.py build`（经 `build-pytorch-steps.py --step build`） |
-| `09-retry` | — | 看门狗中断后 dispatch retry workflow（A01.1 save 完成后；`if: always()` 条件触发；成功路径不执行） |
-| `10.wheel` | `wheel` | `setup.py bdist_wheel`，复制唯一 `.whl` 到 `--dist-dir` |
-| `11.verify` | — | CPU wheel 冒烟（结构/CK 符号/SHA256/manifest + pip 安装 + `is_ck_sdpa_available()`） |
-| `12.publish` | — | 准备 GitHub Release 元数据（`publish_release=true` 时，经 A99） |
+| `08.prepare` | `prepare` | 初始化编译 env 并输出 command/args；由 A01 转发至 `watchdog/run` |
+| `09.wheel` | `wheel` | `setup.py bdist_wheel`，复制唯一 `.whl` 到 `--dist-dir` |
+| `10.verify` | — | CPU wheel 冒烟（结构/CK 符号/SHA256/manifest + pip 安装 + `is_ck_sdpa_available()`） |
+| `11.publish` | — | 准备 GitHub Release 元数据（`publish_release=true` 时，经 A99） |
 
-成功路径：`npx tsx scripts/cli.ts 08.build` → `10.wheel` → `11.verify` → `12.publish`。看门狗中断时于 `08.build` 之后插入 `09-retry`。亦可 `npm run pt -- 08.build`（CLI 程序名 `pt-build`）。
+成功路径：A01 `watchdog/run` 成功 → `09.wheel` → `10.verify` → `11.publish`。看门狗 graceful abort 时 A01.1 save 后 workflow 调用 `watchdog/dispatch-retry`。
 
 env 统一经 `scripts/lib/init-build-env.ts`（含 `SOURCE_DATE_EPOCH`，取自 `pytorch.build_commit_date`）。
 
@@ -148,7 +147,7 @@ GitHub Release（构建成功后自动上传；`publish_release=true` 时；**pr
 - `torch-*.whl.sha256`
 - `wheel.manifest.json`
 
-`wheel.manifest.json` 由 `11.verify` 写入（CI 经 `A99.pt-verify-publish` 上传）。主要字段：
+`wheel.manifest.json` 由 `10.verify` 写入（CI 经 `A99.pt-verify-publish` 上传）。主要字段：
 
 | 字段 | 含义 |
 |------|------|
@@ -172,10 +171,10 @@ torch-*+ck.rocm7.14.0.gfx120x*-cp312-cp312-win_amd64.whl
 
 | 检查 | 脚本 |
 |------|------|
-| CI smoke test（CPU） | `npx tsx scripts/cli.ts 11.verify --dist-dir dist --build-caches dist\build-caches.json` |
+| CI smoke test（CPU） | `npx tsx scripts/cli.ts 10.verify --dist-dir dist --build-caches dist\build-caches.json` |
 | 部署前 GPU smoke test（gfx120x 真机） | `python test/gpu-smoke-test.py -w .` |
 
-Smoke test（`11.verify`，CPU）：wheel 文件名/结构（含 CK fwd/bwd dim 符号）→ SHA256 / manifest → pip 安装 → 校验 `torch.backends.cuda.is_ck_sdpa_available()`。GPU 上跑 CK SDPA fwd/bwd 见 `test/gpu-smoke-test.py`（**先 pip install wheel**，部署前在 gfx120x 真机手动跑；不替代 `11.verify`；在 `TORCH_ROCM_FA_PREFER_CK=1` 下以 `sdpa_kernel(SDPBackend.FLASH_ATTENTION)` 限定 backend，确认 fwd/bwd 均走 CK 而非 math fallback）。
+Smoke test（`10.verify`，CPU）：wheel 文件名/结构（含 CK fwd/bwd dim 符号）→ SHA256 / manifest → pip 安装 → 校验 `torch.backends.cuda.is_ck_sdpa_available()`。GPU 上跑 CK SDPA fwd/bwd 见 `test/gpu-smoke-test.py`（**先 pip install wheel**，部署前在 gfx120x 真机手动跑；不替代 `10.verify`；在 `TORCH_ROCM_FA_PREFER_CK=1` 下以 `sdpa_kernel(SDPBackend.FLASH_ATTENTION)` 限定 backend，确认 fwd/bwd 均走 CK 而非 math fallback）。
 
 ## 安装到 ComfyUI
 

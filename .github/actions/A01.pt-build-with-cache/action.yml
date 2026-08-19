@@ -1,5 +1,5 @@
 name: PT build with worktree cache
-description: 运行编译 CLI，并在结束后保存 worktree + ccache（use_cache=true 时 compile 非 skipped 即 save；false 时仅成功 save）
+description: prepare 编译命令 + watchdog/run + post-build cache save（use_cache=true 时 compile 非 skipped 即 save；false 时仅成功 save）
 
 inputs:
   pt-src:
@@ -9,20 +9,47 @@ inputs:
     description: true 时在 build 后 save worktree + ccache（非 skipped 即 save）；false 时仅成功时 save
     required: false
     default: "true"
-  run:
-    description: 编译 CLI 命令（如 npx tsx scripts/cli.ts 08.build --pt-src …）
+  job-start-time:
+    description: UTC epoch 毫秒，来自 watchdog/job-start output
     required: true
+
+outputs:
+  should-retry:
+    description: 看门狗 graceful abort 时为 true
+    value: ${{ steps.run-task.outputs.should-retry }}
+  aborted:
+    description: deadline 触发且曾进入优雅中止流程
+    value: ${{ steps.run-task.outputs.aborted }}
+  force-killed:
+    description: 3× SIGINT 后平台强杀
+    value: ${{ steps.run-task.outputs.force-killed }}
+  task-succeeded:
+    description: 编译子进程 exit code === 0
+    value: ${{ steps.run-task.outputs.task-succeeded }}
+  exit-code:
+    description: 编译子进程退出码
+    value: ${{ steps.run-task.outputs.exit-code }}
 
 runs:
   using: composite
   steps:
-    - name: Run build CLI step
-      id: run-build
+    - name: Prepare build command
+      id: prepare
       shell: pwsh
-      run: ${{ inputs.run }}
+      run: npx tsx scripts/cli.ts 08.prepare --pt-src ${{ inputs.pt-src }} --export-github-env
+
+    - name: Run build with watchdog
+      id: run-task
+      uses: hcwhan/actions/kit/watchdog/run@main
+      with:
+        working-directory: ${{ inputs.pt-src }}
+        command: '${{ steps.prepare.outputs.command }}'
+        args: '${{ steps.prepare.outputs.args }}'
+        job-start-time: ${{ inputs.job-start-time }}
+        limit-hours: "5"
 
     - name: Post-build cache save
-      if: always() && steps.run-build.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-build.conclusion == 'success') && env.ABORT_FORCE_KILLED != 'true'
+      if: always() && steps.run-task.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-task.conclusion == 'success') && steps.run-task.outputs.force-killed != 'true'
       uses: "./.github/actions/A01.pt-build-with-cache/A01.1.pt-post-build-caches"
       with:
         pt-src: ${{ inputs.pt-src }}

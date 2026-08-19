@@ -7,11 +7,10 @@ import { runPatch } from "./commands/04.patch.js";
 import { runHipify } from "./commands/05.hipify.js";
 import { runVerifyBootstrap } from "./commands/06.verify-bootstrap.js";
 import { runPinMtimes } from "./commands/07.pin-mtimes.js";
-import { runBuild } from "./commands/08.build.js";
-import { runWatchdogRetry } from "./commands/09-retry.js";
-import { runWheel } from "./commands/10.wheel.js";
-import { runVerify } from "./commands/11.verify.js";
-import { runPublish } from "./commands/12.publish.js";
+import { runPrepareBuild } from "./commands/08.prepare.js";
+import { runWheel } from "./commands/09.wheel.js";
+import { runVerify } from "./commands/10.verify.js";
+import { runPublish } from "./commands/11.publish.js";
 
 const program = new Command();
 
@@ -89,26 +88,24 @@ program
   });
 
 program
-  .command("08.build")
+  .command("08.prepare")
   .description(
-    "编译 PyTorch：cache-hit 时 ninja -C build install；cache-miss 时 setup.py build（经 build-pytorch-steps.py）",
+    "初始化编译 env 并输出 command/args（供 watchdog/run spawn；cache-hit 时 ninja -C，miss 时 setup.py build）",
   )
   .requiredOption("--pt-src <path>")
-  .action(async (opts) => {
-    await runBuild({ ptSrc: opts.ptSrc });
-  });
-
-program
-  .command("09-retry")
-  .description(
-    "看门狗中断后 dispatch retry workflow（A01.1 save 完成后由 workflow 条件触发）",
+  .option(
+    "--export-github-env",
+    "将 initBuildEnv 编译变量（含 ccache/MSVC 路径）追加到 GITHUB_ENV",
   )
-  .action(async () => {
-    await runWatchdogRetry();
+  .action((opts) => {
+    runPrepareBuild({
+      ptSrc: opts.ptSrc,
+      exportGithubEnv: Boolean(opts.exportGithubEnv),
+    });
   });
 
 program
-  .command("10.wheel")
+  .command("09.wheel")
   .description("打包 torch wheel（setup.py bdist_wheel）并复制到 dist-dir")
   .requiredOption("--pt-src <path>")
   .requiredOption("--dist-dir <path>")
@@ -120,7 +117,7 @@ program
   });
 
 program
-  .command("11.verify")
+  .command("10.verify")
   .description(
     "CPU wheel 校验（结构/CK 符号/SHA256/manifest）+ pip 安装冒烟 + is_ck_sdpa_available()",
   )
@@ -137,7 +134,7 @@ program
   });
 
 program
-  .command("12.publish")
+  .command("11.publish")
   .description("准备 GitHub Release 元数据")
   .requiredOption("--dist-dir <path>")
   .requiredOption("--workflow-name <name>")
