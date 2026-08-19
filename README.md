@@ -110,7 +110,7 @@ wheel / verify / publish 在 compile 未成功时不运行。`wheel.manifest.jso
 - `msvcVersion`：vswhere 最新 MSVC 工具集目录名（完整版本，如 `14.42.34433`）
 - `rocmClangVersion`：`clang --version` 解析完整版本 token（如 `19.0.0git`）
 - `ninja` / `cmake`：`ninja --version` / `cmake --version` 的 major.minor
-- **versioned GHA cache**（`hcwhan/actions/cache@v1`：`cache-key` 槽位 + UTC 后缀；restore 取槽位最新 versioned key；save 后 API verify + 同族清理）
+- **versioned GHA cache**（`hcwhan/actions/cache@main`：`cache-key` 槽位 + UTC 后缀；restore 取槽位最新 versioned key；save 后 API verify + 同族清理）
 - **hit + verify 通过**：跳过 prep / patch / hipify
 - **compile**：cache-hit 且 `build.ninja` 有效时 **`ninja -C build install`**（跳过 CMake reconfigure）；否则经 `build-pytorch-steps.py --step build` 调用 **`setup.py build`**
 - **save**：`use_cache=true` 时 compile 非 skipped 即 save；`use_cache=false` 时仅成功 save

@@ -10,7 +10,7 @@ runs:
   using: composite
   steps:
     - name: Restore ccache
-      uses: hcwhan/actions/cache/restore@v1
+      uses: hcwhan/actions/cache/restore@main
       id: ccache-restore
       with:
         path: ${{ runner.temp }}/ccache

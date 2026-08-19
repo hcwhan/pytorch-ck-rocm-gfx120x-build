@@ -123,7 +123,7 @@ runs:
         $env:Path = "$(Join-Path $libuvRoot 'bin');$env:Path"
 
     - name: Restore pip toolchain cache
-      uses: hcwhan/actions/cache/restore@v1
+      uses: hcwhan/actions/cache/restore@main
       id: pip-toolchain-cache
       with:
         path: ${{ runner.temp }}/pip-toolchain-cache
@@ -181,7 +181,7 @@ runs:
 
     - name: Save pip toolchain cache
       if: steps.pip-toolchain-cache.outputs.cache-used != 'true'
-      uses: hcwhan/actions/cache/save@v1
+      uses: hcwhan/actions/cache/save@main
       with:
         path: ${{ runner.temp }}/pip-toolchain-cache
         family-key: ${{ env.PIP_TOOLCHAIN_CACHE_PREFIX }}

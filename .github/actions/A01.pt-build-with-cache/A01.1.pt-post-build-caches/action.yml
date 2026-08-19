@@ -10,14 +10,14 @@ runs:
   using: composite
   steps:
     - name: Save worktree cache
-      uses: hcwhan/actions/cache/save@v1
+      uses: hcwhan/actions/cache/save@main
       with:
         path: ${{ inputs.pt-src }}
         family-key: ${{ env.WORKTREE_CACHE_PREFIX }}
         cache-key: ${{ env.WORKTREE_CACHE_KEY }}
 
     - name: Save ccache
-      uses: hcwhan/actions/cache/save@v1
+      uses: hcwhan/actions/cache/save@main
       with:
         path: ${{ runner.temp }}/ccache
         family-key: ${{ env.CCACHE_CACHE_PREFIX }}

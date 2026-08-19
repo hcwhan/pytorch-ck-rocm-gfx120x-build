@@ -110,7 +110,7 @@ wheel / verify / publish do not run unless compile succeeds. `wheel.manifest.jso
 - `msvcVersion`: latest MSVC toolset dir name from vswhere (full version, e.g. `14.42.34433`)
 - `rocmClangVersion`: full version token parsed from `clang --version` (e.g. `19.0.0git`)
 - `ninja` / `cmake`: major.minor from `ninja --version` / `cmake --version`
-- **Versioned GHA cache** (`hcwhan/actions/cache@v1`: `cache-key` slot + UTC suffix; restore picks newest versioned key in slot; save verifies via API + family cleanup)
+- **Versioned GHA cache** (`hcwhan/actions/cache@main`: `cache-key` slot + UTC suffix; restore picks newest versioned key in slot; save verifies via API + family cleanup)
 - **hit + verify pass**: skip prep / patch / hipify
 - **compile**: on cache-hit with valid `build.ninja`, **`ninja -C build install`** (skips CMake reconfigure); otherwise **`setup.py build`** via `build-pytorch-steps.py --step build`
 - **save**: `use_cache=true` saves after compile (not skipped); `use_cache=false` saves only on success
