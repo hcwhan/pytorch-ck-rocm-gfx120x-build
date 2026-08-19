@@ -23,7 +23,7 @@ runs:
   steps:
     - name: Restore worktree cache
       if: inputs.use-cache == 'true'
-      uses: hcwhan/actions/cache/restore@main
+      uses: hcwhan/actions/kit/cache/restore@main
       id: cache-restore
       with:
         path: ${{ inputs.pt-src }}
@@ -32,7 +32,7 @@ runs:
 
     - name: Lookup worktree cache (restore skipped)
       if: inputs.use-cache != 'true'
-      uses: hcwhan/actions/cache/lookup@main
+      uses: hcwhan/actions/kit/cache/lookup@main
       id: cache-lookup
       with:
         cache-key: ${{ env.WORKTREE_CACHE_KEY }}

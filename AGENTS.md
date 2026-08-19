@@ -8,7 +8,7 @@
 |----------|------|
 | **serial** | worktree restore → bootstrap verify → `07.pin-mtimes`（含 ROCm 外部头文件） → cache-hit: `ninja -C` / cache-miss: `setup.py build` → save worktree + ccache → `bdist_wheel` → write `dist/build-caches.json` → CPU smoke test → optional Release |
 
-手动 `workflow_dispatch`（输入：`ninja_workers`→`MAX_JOBS`、`use_cache`、`publish_release`、`retry_count`→`RETRY_COUNT` 默认 `0` 由看门狗递增）；setuptools 同进程入口：`build/build-pytorch-steps.py`。GHA cache 经 **`hcwhan/actions/cache@main`**（`family-key` + `cache-key` 槽位；实际 key = `cache-key` + UTC 后缀；restore/lookup 取槽位最新 versioned key；save 后 API verify + `cleanup-stale`）。Worktree cache-key：`worktree-v3-lock[{lockHash8}]-lockWheel[{lockWheelHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`（`lockHash8` = lock `toolchain`+`pytorch`+`compile`；`lockWheelHash8` = lock `wheel`；`patchHash8` = `scripts/commands/04.patch.ts`+`scripts/commands/05.hipify.ts`+`scripts/lib/gpu-archs.ts`+`build/add-make-kernel-pt.py`；`msvc`/`rocmClang` = 完整工具链版本号；`ninja`/`cmake` = major.minor）。Ccache cache-key：`ccache-v3-lock[…]-patch[…]-msvc[…]-rocmClang[…]-ninja[…]-cmake[…]`（无 `lockWheel`）。Pip cache-key：`pt-pip-toolchain-v2-py[…]-rocm[…]-idx[…]`（`01.config`）。
+手动 `workflow_dispatch`（输入：`ninja_workers`→`MAX_JOBS`、`use_cache`、`publish_release`、`retry_count`→`RETRY_COUNT` 默认 `0` 由看门狗递增）；setuptools 同进程入口：`build/build-pytorch-steps.py`。GHA cache 经 **`hcwhan/actions/kit/cache@main`**（`family-key` + `cache-key` 槽位；实际 key = `cache-key` + UTC 后缀；restore/lookup 取槽位最新 versioned key；save 后 API verify + `cleanup-stale`）。Worktree cache-key：`worktree-v3-lock[{lockHash8}]-lockWheel[{lockWheelHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`（`lockHash8` = lock `toolchain`+`pytorch`+`compile`；`lockWheelHash8` = lock `wheel`；`patchHash8` = `scripts/commands/04.patch.ts`+`scripts/commands/05.hipify.ts`+`scripts/lib/gpu-archs.ts`+`build/add-make-kernel-pt.py`；`msvc`/`rocmClang` = 完整工具链版本号；`ninja`/`cmake` = major.minor）。Ccache cache-key：`ccache-v3-lock[…]-patch[…]-msvc[…]-rocmClang[…]-ninja[…]-cmake[…]`（无 `lockWheel`）。Pip cache-key：`pt-pip-toolchain-v2-py[…]-rocm[…]-idx[…]`（`01.config`）。
 
 ## 命名约定
 
@@ -72,10 +72,10 @@
 |--------|------|
 | `A00.pt-job-bootstrap` | Node 26/npm + `01.config` + A00.1 + `02.toolchain-fingerprint` + A00.2/A00.3 restore + `06.verify-bootstrap` + 条件 prep/patch/hipify + `07.pin-mtimes`（需 job 级 checkout；依赖 env `PT_SRC`/`USE_CACHE`） |
 | `A00.1.pt-rocm-toolchain` | Python / MSVC / rocm[devel] / ccache / pip toolchain cache / rocm-sdk-libraries + device wheels / `rocm_sdk init`（仅 A00 调用；需 env `GPU_ARCHS`） |
-| `A00.2.ccache-restore` | `hcwhan/actions/cache/restore` 恢复 `%RUNNER_TEMP%/ccache`（`CCACHE_CACHE_PREFIX` + `CCACHE_CACHE_KEY`） |
+| `A00.2.ccache-restore` | `hcwhan/actions/kit/cache/restore` 恢复 `%RUNNER_TEMP%/ccache`（`CCACHE_CACHE_PREFIX` + `CCACHE_CACHE_KEY`） |
 | `A00.3.worktree-cache-restore` | restore 整棵 PT 工作树，或 `use-cache=false` 时 `lookup` 仅探测 `cache-exists` |
 | `A01.pt-build-with-cache` | `08.build` + 调用 A01.1 post-build cache save |
-| `A01.1.pt-post-build-caches` | save worktree + ccache（`hcwhan/actions/cache/save`；verify + `cleanup-stale` 内置） |
+| `A01.1.pt-post-build-caches` | save worktree + ccache（`hcwhan/actions/kit/cache/save`；verify + `cleanup-stale` 内置） |
 | `A99.pt-verify-publish` | `11.verify` + artifact + 可选 Release |
 
 ## 设计决策
@@ -88,7 +88,7 @@
 - **完整编译 CK Tile FMHA fwd/bwd**；**fav_v3**（MI3xx AITER ASM）仅 lock `gpu_archs` 含 **gfx942/gfx950** 时编入（当前 `gfx1200;gfx1201` 跳过）
 - **`/Brepro` + `SOURCE_DATE_EPOCH`**：固定 PE TimeDateStamp 与 wheel zip 时间戳（`/Brepro` 仅追加到 `CMAKE_SHARED_LINKER_FLAGS` / `CMAKE_EXE_LINKER_FLAGS`，不作用于 `llvm-lib` 静态库链接）
 - **`use_cache` 默认 true**（false 时不 restore worktree，仅 lookup；**save 仅 compile 成功时**）
-- **worktree cache save**：`use_cache=true` 时 compile 非 skipped 即 save（含失败/取消）；`hcwhan/actions/cache` 默认 `cleanup-stale` 在 save/restore 成功后清理同族旧 key
+- **worktree cache save**：`use_cache=true` 时 compile 非 skipped 即 save（含失败/取消）；`hcwhan/actions/kit/cache` 默认 `cleanup-stale` 在 save/restore 成功后清理同族旧 key
 - **ccache save**：同上规则；`CCACHE_MAXSIZE=3G`
 - **worktree hit bootstrap**：`06.verify-bootstrap` 通过则 skip prep/patch/hipify；verify 失败 fallback miss
 - **compile**：cache-hit 时 `ninja -C build install`（跳过 CMake reconfigure，保 `.ninja_log`）；cache-miss 时 `setup.py build`
@@ -120,7 +120,7 @@ worktree cache 恢复后，ninja 必须同时通过 **3 条 dirty 检查**才跳
 | `develRoot/lib` | `_rocm_sdk_devel` | ROCm devel 链接库 |
 | `libuv_ROOT/include`、`libuv_ROOT/lib` | libuv（env 已设时） | libuv 头文件与库 |
 
-**cache key 前缀统一定义**：`WORKTREE_CACHE_PREFIX`（`worktree-v3`）、`CCACHE_CACHE_PREFIX`（`ccache-v3`）、`PIP_TOOLCHAIN_CACHE_PREFIX`（`pt-pip-toolchain-v2`）分别在 `worktree-cache-key.ts` / `ccache-cache-key.ts` / `pip-cache-key.ts` 导出，经 `02.toolchain-fingerprint` 或 `01.config` 写入 `GITHUB_ENV`，作为 `hcwhan/actions/cache` 的 `family-key`。
+**cache key 前缀统一定义**：`WORKTREE_CACHE_PREFIX`（`worktree-v3`）、`CCACHE_CACHE_PREFIX`（`ccache-v3`）、`PIP_TOOLCHAIN_CACHE_PREFIX`（`pt-pip-toolchain-v2`）分别在 `worktree-cache-key.ts` / `ccache-cache-key.ts` / `pip-cache-key.ts` 导出，经 `02.toolchain-fingerprint` 或 `01.config` 写入 `GITHUB_ENV`，作为 `hcwhan/actions/kit/cache` 的 `family-key`。
 
 **同族清理**：save/restore 成功后 `cleanup-stale`（默认 true）删除 `family-key` 下除当前 `cache-key-full` 外的条目，避免旧 patch 缓存堆积；典型占用约 6.7GB（1 worktree ~2.45GB + 1 ccache ~2GB + 1 pip ~2.25GB），低于 GHA 10GB 上限。
 
