@@ -1,7 +1,7 @@
 import { cacheKeyToken } from "./cache-key-token.js";
 
-export const CCACHE_CACHE_PREFIX = "ccache-v3";
-
+export const CCACHE_CACHE_FAMILY = "pt-ccache";
+const CCACHE_CACHE_VERSION = "v3";
 
 export function buildCcacheCacheKey(options: {
   lockHash8: string;
@@ -12,7 +12,8 @@ export function buildCcacheCacheKey(options: {
   cmakeMinor: string;
 }): string {
   return [
-    CCACHE_CACHE_PREFIX,
+    CCACHE_CACHE_FAMILY,
+    CCACHE_CACHE_VERSION,
     `lock[${options.lockHash8}]`,
     `patch[${options.patchHash8}]`,
     `msvc[${cacheKeyToken(options.msvcVersion)}]`,

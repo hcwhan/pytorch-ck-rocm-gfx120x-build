@@ -103,7 +103,8 @@ wheel / verify / publish 在 compile 未成功时不运行。`wheel.manifest.jso
 
 **Worktree cache**（整棵 `C:\pt\pytorch`：patch 后源码 + hipify + `build/`）：
 
-- Key：`worktree-v3-lock[{lockHash8}]-lockWheel[{lockWheelHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`
+- **family-key**：`pt-worktree`
+- **cache-key**：`pt-worktree-v3-lock[{lockHash8}]-lockWheel[{lockWheelHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`
 - `lockHash8`：lock `toolchain` + `pytorch` + `compile` → SHA256 前 8 位
 - `lockWheelHash8`：lock `wheel` → SHA256 前 8 位
 - `patchHash8`：`scripts/commands/04.patch.ts`、`scripts/commands/05.hipify.ts`、`scripts/lib/gpu-archs.ts`、`build/add-make-kernel-pt.py` → SHA256 前 8 位
@@ -117,7 +118,7 @@ wheel / verify / publish 在 compile 未成功时不运行。`wheel.manifest.jso
 - **miss**：prep → patch → hipify → compile → save
 - **hit + verify 失败**：job 终止（不再 fallback 重建）
 
-另有独立 **pip toolchain cache**（`PIP_TOOLCHAIN_CACHE_KEY`：`pt-pip-toolchain-v2-py[{python}]-rocm[{rocm}]-idx[{indexHash8}]`，`indexHash8` = lock `toolchain.rocm_index` → SHA256 前 8 位）与 **ccache**（`CCACHE_CACHE_KEY`：`ccache-v3-lock[{lockHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`，无 `lockWheel`）分层。
+另有独立 **pip toolchain cache**（family `pt-pip-toolchain`；`PIP_TOOLCHAIN_CACHE_KEY`：`pt-pip-toolchain-v2-py[{python}]-rocm[{rocm}]-idx[{indexHash8}]`，`indexHash8` = lock `toolchain.rocm_index` → SHA256 前 8 位）与 **ccache**（family `pt-ccache`；`CCACHE_CACHE_KEY`：`pt-ccache-v3-lock[{lockHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`，无 `lockWheel`）分层。
 
 ### 构建阶段
 

@@ -2,9 +2,9 @@ import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { runCapture } from "../lib/exec.js";
 import { appendGithubEnv } from "../lib/github.js";
-import { buildCcacheCacheKey, CCACHE_CACHE_PREFIX } from "../lib/ccache-cache-key.js";
+import { buildCcacheCacheKey, CCACHE_CACHE_FAMILY } from "../lib/ccache-cache-key.js";
 import { buildPatchHash8 } from "../lib/pt-patch-hash.js";
-import { buildWorktreeCacheKey, WORKTREE_CACHE_PREFIX } from "../lib/worktree-cache-key.js";
+import { buildWorktreeCacheKey, WORKTREE_CACHE_FAMILY } from "../lib/worktree-cache-key.js";
 import {
   parseRocmClangFullVersion,
   resolveCmakeMinorVersion,
@@ -136,10 +136,10 @@ export function runToolchainFingerprint(options?: {
     console.log(`Ccache cache key: ${ccacheKey}`);
     if (options.exportGithubEnv) {
       appendGithubEnv({
+        WORKTREE_CACHE_FAMILY,
         WORKTREE_CACHE_KEY: cacheKey,
-        WORKTREE_CACHE_PREFIX,
+        CCACHE_CACHE_FAMILY,
         CCACHE_CACHE_KEY: ccacheKey,
-        CCACHE_CACHE_PREFIX,
       });
     }
     return;

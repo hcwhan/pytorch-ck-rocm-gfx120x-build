@@ -103,7 +103,8 @@ wheel / verify / publish do not run unless compile succeeds. `wheel.manifest.jso
 
 **Worktree cache** (entire `C:\pt\pytorch`: patched source + hipify + `build/`):
 
-- Key: `worktree-v3-lock[{lockHash8}]-lockWheel[{lockWheelHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`
+- **family-key**: `pt-worktree`
+- **cache-key**: `pt-worktree-v3-lock[{lockHash8}]-lockWheel[{lockWheelHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`
 - `lockHash8`: lock `toolchain` + `pytorch` + `compile` → SHA256 prefix (8 hex chars)
 - `lockWheelHash8`: lock `wheel` → SHA256 prefix (8 hex chars)
 - `patchHash8`: `scripts/commands/04.patch.ts`, `scripts/commands/05.hipify.ts`, `scripts/lib/gpu-archs.ts`, `build/add-make-kernel-pt.py` → SHA256 prefix (8 hex chars)
@@ -117,7 +118,7 @@ wheel / verify / publish do not run unless compile succeeds. `wheel.manifest.jso
 - **miss**: prep → patch → hipify → compile → save
 - **hit + verify fail**: job fails (no fallback rebuild)
 
-A separate **pip toolchain cache** (`PIP_TOOLCHAIN_CACHE_KEY`: `pt-pip-toolchain-v2-py[{python}]-rocm[{rocm}]-idx[{indexHash8}]`, `indexHash8` = lock `toolchain.rocm_index` → SHA256 prefix) and **ccache** (`CCACHE_CACHE_KEY`: `ccache-v3-lock[{lockHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`, no `lockWheel`) layer above worktree cache.
+A separate **pip toolchain cache** (family `pt-pip-toolchain`; `PIP_TOOLCHAIN_CACHE_KEY`: `pt-pip-toolchain-v2-py[{python}]-rocm[{rocm}]-idx[{indexHash8}]`, `indexHash8` = lock `toolchain.rocm_index` → SHA256 prefix) and **ccache** (family `pt-ccache`; `CCACHE_CACHE_KEY`: `pt-ccache-v3-lock[{lockHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`, no `lockWheel`) layer above worktree cache.
 
 ### Build stages
 

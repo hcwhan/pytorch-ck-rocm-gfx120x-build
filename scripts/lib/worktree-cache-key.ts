@@ -1,7 +1,7 @@
 import { cacheKeyToken } from "./cache-key-token.js";
 
-export const WORKTREE_CACHE_PREFIX = "worktree-v3";
-
+export const WORKTREE_CACHE_FAMILY = "pt-worktree";
+const WORKTREE_CACHE_VERSION = "v3";
 
 export function buildWorktreeCacheKey(options: {
   lockHash8: string;
@@ -13,7 +13,8 @@ export function buildWorktreeCacheKey(options: {
   cmakeMinor: string;
 }): string {
   return [
-    WORKTREE_CACHE_PREFIX,
+    WORKTREE_CACHE_FAMILY,
+    WORKTREE_CACHE_VERSION,
     `lock[${options.lockHash8}]`,
     `lockWheel[${options.lockWheelHash8}]`,
     `patch[${options.patchHash8}]`,

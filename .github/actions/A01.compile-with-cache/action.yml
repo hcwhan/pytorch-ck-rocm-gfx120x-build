@@ -56,7 +56,7 @@ runs:
       uses: hcwhan/actions/kit/cache/save@main
       with:
         path: ${{ inputs.pt-src }}
-        family-key: ${{ env.WORKTREE_CACHE_PREFIX }}
+        family-key: ${{ env.WORKTREE_CACHE_FAMILY }}
         cache-key: ${{ env.WORKTREE_CACHE_KEY }}
 
     - name: Save ccache cache
@@ -64,5 +64,5 @@ runs:
       uses: hcwhan/actions/kit/cache/save@main
       with:
         path: ${{ runner.temp }}/ccache
-        family-key: ${{ env.CCACHE_CACHE_PREFIX }}
+        family-key: ${{ env.CCACHE_CACHE_FAMILY }}
         cache-key: ${{ env.CCACHE_CACHE_KEY }}

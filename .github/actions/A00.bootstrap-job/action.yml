@@ -47,7 +47,7 @@ runs:
       id: pip-toolchain-cache
       with:
         path: ${{ runner.temp }}/pip-toolchain-cache
-        family-key: ${{ env.PIP_TOOLCHAIN_CACHE_PREFIX }}
+        family-key: ${{ env.PIP_TOOLCHAIN_CACHE_FAMILY }}
         cache-key: ${{ env.PIP_TOOLCHAIN_CACHE_KEY }}
 
     - name: Export pip cache dir env
@@ -104,7 +104,7 @@ runs:
       uses: hcwhan/actions/kit/cache/save@main
       with:
         path: ${{ runner.temp }}/pip-toolchain-cache
-        family-key: ${{ env.PIP_TOOLCHAIN_CACHE_PREFIX }}
+        family-key: ${{ env.PIP_TOOLCHAIN_CACHE_FAMILY }}
         cache-key: ${{ env.PIP_TOOLCHAIN_CACHE_KEY }}
 
     - name: Install ccache and libuv
@@ -122,7 +122,7 @@ runs:
       id: ccache-cache
       with:
         path: ${{ runner.temp }}/ccache
-        family-key: ${{ env.CCACHE_CACHE_PREFIX }}
+        family-key: ${{ env.CCACHE_CACHE_FAMILY }}
         cache-key: ${{ env.CCACHE_CACHE_KEY }}
         only-lookup: ${{ env.USE_CACHE == 'true' && 'false' || 'true' }}
 
@@ -131,7 +131,7 @@ runs:
       id: worktree-cache
       with:
         path: ${{ env.PT_SRC }}
-        family-key: ${{ env.WORKTREE_CACHE_PREFIX }}
+        family-key: ${{ env.WORKTREE_CACHE_FAMILY }}
         cache-key: ${{ env.WORKTREE_CACHE_KEY }}
         only-lookup: ${{ env.USE_CACHE == 'true' && 'false' || 'true' }}
 
