@@ -51,10 +51,10 @@
 | `06.verify-bootstrap` | worktree cache hit 后校验 prep+patch+hipify 产物（不含 `build/`）；失败则 fallback miss |
 | `07.pin-mtimes` | bootstrap 末尾将 PT 工作树 + ROCm SDK 外部头文件 mtime 固定为 `SOURCE_DATE_EPOCH`（满足 ninja 3 条 dirty 检查；见下方"缓存复用"节） |
 | `08.prepare` | 初始化编译 env（`--export-github-env` 写 GITHUB_ENV，含 ccache/MSVC 路径）并输出 `command`/`args`（JSON）；cache-hit → `ninja -C`；miss → `setup.py build`；由 A01 转发至 `hcwhan/actions/kit/watchdog/run@main` |
-| `09.wheel` | `setup.py bdist_wheel` → 复制到 `dist/`（env 重设，不重复 pip install） |
-| `10.verify` | CPU 冒烟（wheel CK fwd/bwd dim 符号 + `is_ck_sdpa_available()`）；manifest `dispatch` 含 `retry_count` |
+| `09.wheel` | `build-pytorch-steps --step wheel`（打 wheel 前 CK FMHA bwd 产物校验）→ 复制到 `dist/` |
+| `10.verify` | CPU 冒烟（wheel CK fwd dim 符号 + `is_ck_sdpa_available()`）；manifest `fmha_bwd` + `dispatch` |
 | `11.publish` | Release 元数据 |
-| `build/build-pytorch-steps.py` | `--step build` / `--step wheel` |
+| `build/build-pytorch-steps.py` | `--step build` / `verify-build` / `wheel`（build/wheel 后校验 bwd obj + 链接新鲜度） |
 | `build/add-make-kernel-pt.py` | CK FMHA blob `make_kernel`→`make_kernel_pt`（`04.patch` 复制到 PT 源码 `ck/`） |
 | `test/gpu-smoke-test.py` | 部署前 GPU 校验（gfx120x 真机；CK SDPA fwd/bwd；CI 不跑） |
 
@@ -131,7 +131,7 @@ worktree cache 恢复后，ninja 必须同时通过 **3 条 dirty 检查**才跳
 
 **不要添加：** 双源校验、manifest 读回自证、`PT_SKIP_*`、patch 内硬编码 lock 字段、命令内二次 `readVersionLock`、单行 composite 包装。
 
-**应当保留：** patch 补丁前状态；`10.verify` CK dim 符号扫描；worktree cache cache-key 槽位（`worktree-v3-…`）；`04.patch` `/Brepro`。
+**应当保留：** patch 补丁前状态；`10.verify` CK fwd dim 符号扫描；`09.wheel` 前 CK FMHA bwd 产物校验；worktree cache cache-key 槽位（`worktree-v3-…`）；`04.patch` `/Brepro`。
 
 ## 维护
 

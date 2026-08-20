@@ -125,8 +125,8 @@ wheel / verify / publish 在 compile 未成功时不运行。`wheel.manifest.jso
 | CLI | setuptools step | 作用 |
 |-----|-----------------|------|
 | `08.prepare` | `prepare` | 初始化编译 env 并输出 command/args；由 A01 转发至 `watchdog/run` |
-| `09.wheel` | `wheel` | `setup.py bdist_wheel`，复制唯一 `.whl` 到 `--dist-dir` |
-| `10.verify` | — | CPU wheel 冒烟（结构/CK 符号/SHA256/manifest + pip 安装 + `is_ck_sdpa_available()`） |
+| `09.wheel` | `wheel` | `build-pytorch-steps --step wheel`（含 bwd 产物校验）→ 复制唯一 `.whl` 到 `--dist-dir` |
+| `10.verify` | — | CPU wheel 冒烟（结构/CK fwd 符号/SHA256/manifest + pip 安装 + `is_ck_sdpa_available()`） |
 | `11.publish` | — | 准备 GitHub Release 元数据（`publish_release=true` 时，经 A99） |
 
 成功路径：A01 `watchdog/run` 成功 → `09.wheel` → `10.verify` → `11.publish`。看门狗 graceful abort 时 A01.1 save 后 workflow 调用 `watchdog/dispatch-retry`。
@@ -154,6 +154,7 @@ GitHub Release（构建成功后自动上传；`publish_release=true` 时；**pr
 | `dispatch` | `ninja_workers`、`use_cache`、`retry_count`（workflow 快照） |
 | `build_caches[]` | worktree cache 元数据（`opt_dim` / `key` / `exists` / `used`） |
 | `ck_opt_dim`、`gpu_archs`、`ck_targets` | lock 编译配置快照 |
+| `fmha_bwd` | 顶层；是否 full-bwd 构建（当前 lock 恒为 `true`） |
 | `size_bytes`、`sha256` | wheel 体积与校验 |
 
 ```powershell
@@ -174,7 +175,7 @@ torch-*+ck.rocm7.14.0.gfx120x*-cp312-cp312-win_amd64.whl
 | CI smoke test（CPU） | `npx tsx scripts/cli.ts 10.verify --dist-dir dist --build-caches dist\build-caches.json` |
 | 部署前 GPU smoke test（gfx120x 真机） | `python test/gpu-smoke-test.py -w .` |
 
-Smoke test（`10.verify`，CPU）：wheel 文件名/结构（含 CK fwd/bwd dim 符号）→ SHA256 / manifest → pip 安装 → 校验 `torch.backends.cuda.is_ck_sdpa_available()`。GPU 上跑 CK SDPA fwd/bwd 见 `test/gpu-smoke-test.py`（**先 pip install wheel**，部署前在 gfx120x 真机手动跑；不替代 `10.verify`；在 `TORCH_ROCM_FA_PREFER_CK=1` 下以 `sdpa_kernel(SDPBackend.FLASH_ATTENTION)` 限定 backend，确认 fwd/bwd 均走 CK 而非 math fallback）。
+Smoke test（`10.verify`，CPU）：wheel 文件名/结构（含 CK fwd dim 符号）→ SHA256 / manifest（含 `fmha_bwd`）→ pip 安装 → 校验 `torch.backends.cuda.is_ck_sdpa_available()`。CK FMHA **bwd** 在 `09.wheel` 前由 `build-pytorch-steps.py` 校验编译产物（`fmha_bwd_api.obj`、`mha_bwd_ck.hip.obj`、各 dim blob 及 `ck_sdpa.lib`/`torch_hip.dll` 链接新鲜度），不在 verify 扫 wheel 二进制。GPU 上跑 CK SDPA fwd/bwd 见 `test/gpu-smoke-test.py`（**先 pip install wheel**，部署前在 gfx120x 真机手动跑；不替代 `10.verify`；在 `TORCH_ROCM_FA_PREFER_CK=1` 下以 `sdpa_kernel(SDPBackend.FLASH_ATTENTION)` 限定 backend，确认 fwd/bwd 均走 CK 而非 math fallback）。
 
 ## 安装到 ComfyUI
 

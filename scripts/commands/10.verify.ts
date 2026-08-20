@@ -137,25 +137,6 @@ with zipfile.ZipFile(wheel) as zf:
     dims_str = ','.join(str(dim) for dim in opt_dims)
     print(f'OK CK FMHA dim markers present dims={dims_str} scanned={scanned}')
 
-    bwd_tokens = [f'_bwd_d{dim}_'.encode('ascii') for dim in opt_dims]
-    found_bwd_dims: set[int] = set()
-    for name in ck_binaries:
-        info = zf.getinfo(name)
-        if info.file_size < min_ck_binary_bytes:
-            continue
-        data = zf.read(name)
-        for dim, token in zip(opt_dims, bwd_tokens):
-            if token in data:
-                found_bwd_dims.add(dim)
-
-    missing_bwd = [dim for dim in opt_dims if dim not in found_bwd_dims]
-    if missing_bwd:
-        raise SystemExit(
-            f'ERROR: CK FMHA bwd OPT_DIM kernels missing in wheel binaries: {missing_bwd} '
-            f'(scanned {scanned} torch binaries)'
-        )
-    print(f'OK CK FMHA bwd dim markers present dims={dims_str}')
-
     meta_paths = [name for name in names if name.endswith('.dist-info/METADATA')]
     if not meta_paths:
         raise SystemExit('ERROR: METADATA not found in wheel archive')
@@ -333,6 +314,7 @@ export function runVerify(options: {
     gpu_archs: gpuArchs,
     ck_targets: ckTargets,
     ck_opt_dim: ckOptDim,
+    fmha_bwd: true,
     wheel_local_version: wheelLocalVersion,
     source_date_epoch: Number(sourceDateEpoch),
     build_variant: "serial",

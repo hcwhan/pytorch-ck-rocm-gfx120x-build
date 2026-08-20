@@ -125,8 +125,8 @@ After bootstrap (`01.config`–`07.pin-mtimes`, via A00), the serial workflow ru
 | CLI | setuptools step | Role |
 |-----|-----------------|------|
 | `08.prepare` | `prepare` | Initialize build env and output command/args; forwarded to `watchdog/run` by A01 |
-| `09.wheel` | `wheel` | `setup.py bdist_wheel`, copies the single `.whl` to `--dist-dir` |
-| `10.verify` | — | CPU wheel smoke test (structure/CK symbols/SHA256/manifest + pip install + `is_ck_sdpa_available()`) |
+| `09.wheel` | `wheel` | `build-pytorch-steps --step wheel` (includes bwd artifact verify) → copy single `.whl` to `--dist-dir` |
+| `10.verify` | — | CPU wheel smoke test (structure/CK fwd symbols/SHA256/manifest + pip install + `is_ck_sdpa_available()`) |
 | `11.publish` | — | Prepare GitHub Release metadata (`publish_release=true`, via A99) |
 
 Success path: A01 `watchdog/run` succeeds → `09.wheel` → `10.verify` → `11.publish`. On watchdog graceful abort, A01.1 save then workflow calls `watchdog/dispatch-retry`.
@@ -159,6 +159,7 @@ gh release download torch-ck-cp312-rocm7.14.0-gfx120x-serial-build123 -D .\dist
 | `dispatch` | `ninja_workers`, `use_cache`, `retry_count` (workflow snapshot) |
 | `build_caches[]` | worktree cache metadata (`opt_dim` / `key` / `exists` / `used`) |
 | `ck_opt_dim`, `gpu_archs`, `ck_targets` | lock compile config snapshot |
+| `fmha_bwd` | top-level; full-bwd build profile (always `true` under current lock) |
 | `size_bytes`, `sha256` | wheel size and checksum |
 
 Expected wheel name (derived from `wheel.wheel_local_version` + `toolchain.python`; PEP 440 normalizes `-` to `.` in the local tag):
@@ -174,7 +175,7 @@ torch-*+ck.rocm7.14.0.gfx120x*-cp312-cp312-win_amd64.whl
 | CI smoke test (CPU) | `npx tsx scripts/cli.ts 10.verify --dist-dir dist --build-caches dist\build-caches.json` |
 | Pre-deploy GPU smoke test (gfx120x hardware) | `python test/gpu-smoke-test.py -w .` |
 
-Smoke test (`10.verify`, CPU): wheel filename/structure (CK fwd/bwd dim markers) → SHA256 / manifest → pip install → `torch.backends.cuda.is_ck_sdpa_available()`. GPU CK SDPA fwd/bwd is in `test/gpu-smoke-test.py` (**pip install the wheel first**; run manually on gfx120x hardware before deploy; does not replace `10.verify`; uses `sdpa_kernel(SDPBackend.FLASH_ATTENTION)` under `TORCH_ROCM_FA_PREFER_CK=1` so fwd/bwd must use CK, not math fallback).
+Smoke test (`10.verify`, CPU): wheel filename/structure (CK fwd dim markers) → SHA256 / manifest (includes `fmha_bwd`) → pip install → `torch.backends.cuda.is_ck_sdpa_available()`. CK FMHA **bwd** is verified at compile artifacts before `09.wheel` via `build-pytorch-steps.py` (`fmha_bwd_api.obj`, `mha_bwd_ck.hip.obj`, per-dim blobs, and `ck_sdpa.lib`/`torch_hip.dll` link freshness)—not by scanning wheel binaries in verify. GPU CK SDPA fwd/bwd is in `test/gpu-smoke-test.py` (**pip install the wheel first**; run manually on gfx120x hardware before deploy; does not replace `10.verify`; uses `sdpa_kernel(SDPBackend.FLASH_ATTENTION)` under `TORCH_ROCM_FA_PREFER_CK=1` so fwd/bwd must use CK, not math fallback).
 
 ## ComfyUI install
 

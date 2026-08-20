@@ -7,6 +7,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+_BWD_API_OBJ = "fmha_bwd_api.hip.obj"
+_MHA_BWD_CK_OBJ = "mha_bwd_ck.hip.obj"
+_CK_SDPA_LIB_NAMES = ("ck_sdpa.lib", "libck_sdpa.a")
+_TORCH_HIP_DLL_NAMES = ("torch_hip.dll", "libtorch_hip.so")
+
 _SETUP_SKIP_BUILD_DEPS_MARKER = "PYTORCH_CK_SKIP_BUILD_DEPS"
 _LIBOMP_DLL = "libomp140.x86_64.dll"
 _LIBUV_DLL = "uv.dll"
@@ -164,11 +169,101 @@ def _exec_setup_py(
         raise SystemExit(result.returncode)
 
 
+def _parse_ck_opt_dims() -> list[int]:
+    raw = os.environ.get("CK_OPT_DIM", "").strip()
+    dims = [int(part) for part in raw.split(",") if part.strip()]
+    if not dims:
+        raise SystemExit("CK_OPT_DIM is missing or empty")
+    return dims
+
+
+def _find_single_artifact(build_dir: Path, names: tuple[str, ...]) -> Path:
+    matches: list[Path] = []
+    for name in names:
+        matches.extend(p for p in build_dir.rglob(name) if p.is_file())
+    if len(matches) != 1:
+        examples = ", ".join(str(p.relative_to(build_dir)) for p in matches[:5])
+        raise SystemExit(
+            f"Expected exactly one of {names!r} under {build_dir}, "
+            f"found {len(matches)}"
+            + (f" (e.g. {examples})" if examples else "")
+        )
+    return matches[0]
+
+
+def _find_fmha_bwd_objs(build_dir: Path) -> list[Path]:
+    return [
+        p
+        for p in build_dir.rglob("*.obj")
+        if p.is_file() and "fmha_bwd" in p.name
+    ]
+
+
+def verify_ck_fmha_bwd_artifacts(pt_src: Path) -> None:
+    """编译后校验 CK FMHA bwd 产物（对齐 FA：链接期对象 + 新鲜度，非 wheel 二进制扫符号）。"""
+    build_dir = pt_src / "build"
+    if not build_dir.is_dir():
+        raise SystemExit(f"build directory missing: {build_dir}")
+
+    ck_sdpa_lib = _find_single_artifact(build_dir, _CK_SDPA_LIB_NAMES)
+    torch_hip = _find_single_artifact(build_dir, _TORCH_HIP_DLL_NAMES)
+    for required in (_BWD_API_OBJ, _MHA_BWD_CK_OBJ):
+        obj = _find_single_artifact(build_dir, (required,))
+        print(
+            f"OK CK FMHA bwd artifact {obj.relative_to(build_dir).as_posix()}",
+            flush=True,
+        )
+
+    opt_dims = _parse_ck_opt_dims()
+    bwd_objs = _find_fmha_bwd_objs(build_dir)
+    for dim in opt_dims:
+        token = f"fmha_bwd_d{dim}_"
+        matches = [p for p in bwd_objs if token in p.name]
+        if not matches:
+            raise SystemExit(
+                f"No fmha_bwd_d{dim}_ *.obj under {build_dir} "
+                f"(CK_OPT_DIM={','.join(str(d) for d in opt_dims)})"
+            )
+        print(
+            f"OK fmha_bwd_d{dim}_ obj count={len(matches)}",
+            flush=True,
+        )
+
+    lib_mtime_ns = ck_sdpa_lib.stat().st_mtime_ns
+    stale_vs_lib = [
+        p for p in bwd_objs if p.stat().st_mtime_ns > lib_mtime_ns
+    ]
+    if stale_vs_lib:
+        examples = ", ".join(
+            p.relative_to(build_dir).as_posix() for p in stale_vs_lib[:5]
+        )
+        raise SystemExit(
+            f"{ck_sdpa_lib.relative_to(build_dir).as_posix()} is older than "
+            f"{len(stale_vs_lib)} fmha_bwd object(s); ck_sdpa.lib must be "
+            f"re-linked after bwd blobs (e.g. {examples})"
+        )
+
+    hip_mtime_ns = torch_hip.stat().st_mtime_ns
+    if hip_mtime_ns < lib_mtime_ns:
+        raise SystemExit(
+            f"{torch_hip.relative_to(build_dir).as_posix()} is older than "
+            f"{ck_sdpa_lib.relative_to(build_dir).as_posix()}; torch_hip "
+            "must be re-linked after ck_sdpa.lib"
+        )
+
+    print(
+        f"OK ck_sdpa.lib fresh vs {len(bwd_objs)} fmha_bwd obj(s); "
+        f"torch_hip fresh vs ck_sdpa.lib",
+        flush=True,
+    )
+
+
 def build_only(pt_src: Path, *, verbose: bool = False) -> None:
     argv = ["build"]
     if verbose:
         argv.append("-v")
     _exec_setup_py(pt_src, argv)
+    verify_ck_fmha_bwd_artifacts(pt_src)
 
 
 def build_wheel(pt_src: Path, *, verbose: bool = False) -> None:
@@ -177,6 +272,7 @@ def build_wheel(pt_src: Path, *, verbose: bool = False) -> None:
     # 与 compile 的 ninja -C 路径重复且可能触发 CMake reconfigure。
     # 运行时 patch setup.py 使 PYTORCH_CK_SKIP_BUILD_DEPS=1 时跳过 build_deps；
     # build 仅同步 torch/ -> build/lib；bdist_wheel --skip-build 只打包。
+    verify_ck_fmha_bwd_artifacts(pt_src)
     _ensure_setup_skip_build_deps_patch(pt_src)
     _ensure_libomp_in_torch_lib(pt_src)
     _ensure_libuv_in_torch_lib(pt_src)
@@ -198,9 +294,10 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--step",
-        choices=["build", "wheel"],
+        choices=["build", "verify-build", "wheel"],
         required=True,
-        help="build：setup.py build；wheel：build 同步 + bdist_wheel --skip-build",
+        help="build：setup.py build + CK FMHA bwd 产物校验；verify-build：仅校验；"
+        "wheel：校验 + build 同步 + bdist_wheel --skip-build",
     )
     parser.add_argument("--pt-src", type=Path, required=True)
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -211,6 +308,10 @@ def main() -> None:
 
     if args.step == "build":
         build_only(args.pt_src, verbose=args.verbose)
+        return
+
+    if args.step == "verify-build":
+        verify_ck_fmha_bwd_artifacts(args.pt_src)
         return
 
     build_wheel(args.pt_src, verbose=args.verbose)

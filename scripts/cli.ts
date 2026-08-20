@@ -119,7 +119,7 @@ program
 program
   .command("10.verify")
   .description(
-    "CPU wheel 校验（结构/CK 符号/SHA256/manifest）+ pip 安装冒烟 + is_ck_sdpa_available()",
+    "CPU wheel 校验（结构/CK fwd 符号/SHA256/manifest）+ pip 安装冒烟 + is_ck_sdpa_available()",
   )
   .requiredOption("--dist-dir <path>")
   .requiredOption(
