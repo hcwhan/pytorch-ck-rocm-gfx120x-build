@@ -66,6 +66,7 @@ function explainNinja(buildDir: string, label: string): void {
 export function runPrepareBuild(options: {
   ptSrc: string;
   exportGithubEnv?: boolean;
+  worktreeCacheUsed: boolean;
 }): void {
   const exportGithubEnv = options.exportGithubEnv ?? false;
   if (process.env.GITHUB_ENV && !exportGithubEnv) {
@@ -85,7 +86,7 @@ export function runPrepareBuild(options: {
 
   const buildDir = path.join(ptSrc, "build");
   const buildNinja = path.join(buildDir, "build.ninja");
-  const cacheHit = process.env.WORKTREE_CACHE_USED === "true";
+  const cacheHit = options.worktreeCacheUsed;
   const maxJobs = requireMaxJobs();
 
   if (cacheHit && existsSync(buildNinja)) {

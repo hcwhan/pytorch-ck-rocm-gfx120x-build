@@ -7,9 +7,9 @@ import {
 } from "node:fs";
 import path from "node:path";
 import {
-  readBuildCaches,
-  validateBuildCachesForVariant,
-} from "../lib/build-caches.js";
+  readBuildMeta,
+  validateBuildMetaForVariant,
+} from "../lib/build-meta.js";
 import { run } from "../lib/exec.js";
 import { getRocmSdkDllDirectories } from "../lib/rocm-sdk-paths.js";
 import {
@@ -240,7 +240,7 @@ function readWorkflowDispatch(): {
 
 export function runVerify(options: {
   distDir: string;
-  buildCaches: string;
+  buildMeta: string;
 }): void {
   const expectedWheelPattern = requireLockEnv("EXPECTED_WHEEL_PATTERN");
   const ckOptDim = requireLockEnv("CK_OPT_DIM");
@@ -256,13 +256,13 @@ export function runVerify(options: {
   const githubSha = requireGithubActionsEnv("GITHUB_SHA");
   const distDir = path.resolve(options.distDir);
 
-  const buildCachesPath = options.buildCaches?.trim();
-  if (!buildCachesPath) {
-    throw new Error("--build-caches is required");
+  const buildMetaPath = options.buildMeta?.trim();
+  if (!buildMetaPath) {
+    throw new Error("--build-meta is required");
   }
 
-  const buildCaches = validateBuildCachesForVariant({
-    buildCaches: readBuildCaches(buildCachesPath),
+  const buildMeta = validateBuildMetaForVariant({
+    buildMeta: readBuildMeta(buildMetaPath),
     ckOptDim,
   });
 
@@ -319,7 +319,7 @@ export function runVerify(options: {
     source_date_epoch: Number(sourceDateEpoch),
     build_variant: "serial",
     dispatch: readWorkflowDispatch(),
-    build_caches: buildCaches,
+    build_meta: buildMeta,
     build_github_run_id: githubRunId,
     build_github_run_number: githubRunNumber,
     build_repository_commit: githubSha,

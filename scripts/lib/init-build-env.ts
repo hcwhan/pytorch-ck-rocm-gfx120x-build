@@ -90,7 +90,7 @@ function assertMsvcSdkPathListEnv(name: string, value: string): void {
     normalized.includes("/vc/tools/");
   if (!hasMsvcSdk) {
     throw new Error(
-      `exportGithubEnv: ${name} must include MSVC/SDK paths from setup-msvc-dev (bootstrap); check A00.1 Setup MSVC ran before 08.prepare`,
+      `exportGithubEnv: ${name} must include MSVC/SDK paths from setup-msvc-dev (bootstrap); check A00 Setup MSVC ran before 08.prepare`,
     );
   }
 }
@@ -135,12 +135,12 @@ function exportBuildEnvToGithub(): void {
   const ccacheDir = process.env.CCACHE_DIR?.trim();
   if (!ccacheDir) {
     throw new Error(
-      "CCACHE_DIR must be set before exportGithubEnv (A00.1 Export ccache directory)",
+      "CCACHE_DIR must be set before exportGithubEnv (00.install-windows-deps / exportCcacheEnv in A00 bootstrap)",
     );
   }
   if (!process.env.CCACHE_COMPRESS?.trim()) {
     throw new Error(
-      "CCACHE_COMPRESS must be set before exportGithubEnv (A00.1 Export ccache directory)",
+      "CCACHE_COMPRESS must be set before exportGithubEnv (00.install-windows-deps / exportCcacheEnv in A00 bootstrap)",
     );
   }
 

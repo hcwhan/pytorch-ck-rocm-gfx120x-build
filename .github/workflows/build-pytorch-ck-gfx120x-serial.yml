@@ -9,7 +9,7 @@ on:
         required: false
         default: "4"
       use_cache:
-        description: "true：restore worktree（含 build/）；compile 非 skipped 即 save worktree+ccache（含失败/看门狗；force-killed 除外）。false：不 restore（仍 lookup 探测 exists；used=false）；仅 compile 成功时 save；ccache 同规则"
+        description: "true：restore worktree（含 build/）；compile 非 skipped 即 save worktree+ccache（含失败/看门狗；force-killed 除外）。false：不 restore（restore only-lookup 探测 exists；used=false）；仅 compile 成功时 save；ccache 同规则"
         type: boolean
         required: false
         default: true
@@ -33,8 +33,8 @@ permissions:
   contents: write
 
 env:
-  MAX_JOBS: ${{ github.event.inputs.ninja_workers }}
   PT_SRC: C:\pt\pytorch
+  MAX_JOBS: ${{ github.event.inputs.ninja_workers }}
   USE_CACHE: ${{ github.event.inputs.use_cache != 'false' && 'true' || 'false' }}
   PUBLISH_RELEASE: ${{ github.event.inputs.publish_release != 'false' && 'true' || 'false' }}
   RETRY_COUNT: ${{ github.event.inputs.retry_count || '0' }}
@@ -53,17 +53,18 @@ jobs:
         id: job-start
         uses: hcwhan/actions/kit/watchdog/job-start@main
 
-      - name: Bootstrap build job
+      - name: Bootstrap job
         id: bootstrap
-        uses: "./.github/actions/A00.pt-job-bootstrap"
+        uses: "./.github/actions/A00.bootstrap-job"
 
-      - name: Compile PyTorch and save worktree + ccache
+      - name: Compile PyTorch and save cache
         id: build
-        uses: "./.github/actions/A01.pt-build-with-cache"
+        uses: "./.github/actions/A01.compile-with-cache"
         with:
+          job-start-time: ${{ steps.job-start.outputs.job-start-time }}
           pt-src: ${{ env.PT_SRC }}
           use-cache: ${{ env.USE_CACHE }}
-          job-start-time: ${{ steps.job-start.outputs.job-start-time }}
+          worktree-cache-used: ${{ steps.bootstrap.outputs.worktree-cache-used }}
 
       - name: Retry after watchdog abort
         if: always() && !cancelled() && steps.build.outputs.should-retry == 'true'
@@ -76,26 +77,29 @@ jobs:
           dispatch-inputs: |
             {"ninja_workers":"${{ env.MAX_JOBS }}","use_cache":"${{ env.USE_CACHE }}","publish_release":"${{ env.PUBLISH_RELEASE }}"}
 
-      - name: Write worktree cache metadata
+      - name: Write compile success metadata
         if: success()
         shell: pwsh
         run: |
           $entry = [ordered]@{
             opt_dim = $env:CK_OPT_DIM
-            key = $env:WORKTREE_CACHE_KEY
-            exists = '${{ steps.bootstrap.outputs.worktree-cache-exists }}' -eq 'true'
-            used = '${{ steps.bootstrap.outputs.worktree-cache-used }}' -eq 'true'
+            'worktree-cache-key' = $env:WORKTREE_CACHE_KEY
+            'worktree-cache-exists' = '${{ steps.bootstrap.outputs.worktree-cache-exists }}' -eq 'true'
+            'worktree-cache-used' = '${{ steps.bootstrap.outputs.worktree-cache-used }}' -eq 'true'
+            'ccache-cache-key' = $env:CCACHE_CACHE_KEY
+            'ccache-cache-exists' = '${{ steps.bootstrap.outputs.ccache-cache-exists }}' -eq 'true'
+            'ccache-cache-used' = '${{ steps.bootstrap.outputs.ccache-cache-used }}' -eq 'true'
           }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          $entry | ConvertTo-Json -Depth 3 -AsArray | Out-File -FilePath dist/build-caches.json -Encoding utf8
+          $entry | ConvertTo-Json -Depth 3 -AsArray | Out-File -FilePath dist/compile-success-meta.json -Encoding utf8
 
-      - name: Package torch wheel
+      - name: Link wheel
         if: success()
         shell: pwsh
         run: npx tsx scripts/cli.ts 09.wheel --pt-src $env:PT_SRC --dist-dir $env:GITHUB_WORKSPACE\dist
 
-      - name: Verify wheel, upload artifact, and publish
+      - name: Verify Wheel and Publish Release
         if: success()
-        uses: "./.github/actions/A99.pt-verify-publish"
+        uses: "./.github/actions/A99.verify-and-publish"
         with:
-          build-caches: dist/build-caches.json
+          build-meta: dist/compile-success-meta.json

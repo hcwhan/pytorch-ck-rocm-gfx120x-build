@@ -79,7 +79,7 @@
 | 输入 | 默认 | 说明 |
 |------|------|------|
 | `ninja_workers` | `4` | Ninja 并行 worker 数（OOM 时可改为 `2`） |
-| `use_cache` | `true` | `true` 时 restore；compile 非 skipped 即 save（含失败/看门狗；`force-killed` 除外）。`false` 时不 restore（仍 lookup 探测 `exists`；`used=false`）；仅 compile 成功时 save |
+| `use_cache` | `true` | `true` 时 restore worktree + ccache；compile 非 skipped 即 save（含失败/看门狗；`force-killed` 除外）。`false` 时二者均不 restore（`restore` + `only-lookup` 仍探测 `exists`；`used=false`）；仅 compile 成功时 save |
 | `publish_release` | `true` | 设为 `false` 时跳过 GitHub Release 上传 |
 | `retry_count` | `0` | 看门狗 auto-retry 内部递增；手动触发时保持默认，**勿改** |
 
@@ -110,26 +110,27 @@ wheel / verify / publish 在 compile 未成功时不运行。`wheel.manifest.jso
 - `msvcVersion`：vswhere 最新 MSVC 工具集目录名（完整版本，如 `14.42.34433`）
 - `rocmClangVersion`：`clang --version` 解析完整版本 token（如 `19.0.0git`）
 - `ninja` / `cmake`：`ninja --version` / `cmake --version` 的 major.minor
-- **versioned GHA cache**（`hcwhan/actions/kit/cache@main`：`cache-key` 槽位 + UTC 后缀；restore 取槽位最新 versioned key；save 后 API verify + 同族清理）
+- **versioned GHA cache**（`hcwhan/actions/kit/cache@main`：`cache-key` 槽位 + UTC 后缀；restore（含 `only-lookup`）取槽位最新 versioned key；save 后 API verify + 同族清理）
 - **hit + verify 通过**：跳过 prep / patch / hipify
 - **compile**：cache-hit 且 `build.ninja` 有效时 **`ninja -C build install`**（跳过 CMake reconfigure）；否则经 `build-pytorch-steps.py --step build` 调用 **`setup.py build`**
 - **save**：`use_cache=true` 时 compile 非 skipped 即 save；`use_cache=false` 时仅成功 save
-- **miss / verify 失败**：prep → patch → hipify → compile → save
+- **miss**：prep → patch → hipify → compile → save
+- **hit + verify 失败**：job 终止（不再 fallback 重建）
 
 另有独立 **pip toolchain cache**（`PIP_TOOLCHAIN_CACHE_KEY`：`pt-pip-toolchain-v2-py[{python}]-rocm[{rocm}]-idx[{indexHash8}]`，`indexHash8` = lock `toolchain.rocm_index` → SHA256 前 8 位）与 **ccache**（`CCACHE_CACHE_KEY`：`ccache-v3-lock[{lockHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`，无 `lockWheel`）分层。
 
 ### 构建阶段
 
-串行 workflow 在 bootstrap（`01.config`–`07.pin-mtimes`，见 A00）之后，按 CLI 序号执行 `08`–`11`；`09.wheel` 经 `build/build-pytorch-steps.py --step wheel` 打 wheel：
+串行 workflow 在 bootstrap（`00.install-windows-deps` + `01.config`–`07.pin-mtimes`，见 A00）之后，按 CLI 序号执行 `08`–`11`；`09.wheel` 经 `build/build-pytorch-steps.py --step wheel` 打 wheel：
 
 | CLI | setuptools step | 作用 |
 |-----|-----------------|------|
-| `08.prepare` | `prepare` | 初始化编译 env 并输出 command/args；由 A01 转发至 `watchdog/run` |
+| `08.prepare` | `prepare` | 初始化编译 env 并输出 command/args（`--worktree-cache-used` 决定 ninja 或 setup.py）；由 A01 转发至 `watchdog/run` |
 | `09.wheel` | `wheel` | `build-pytorch-steps --step wheel`（含 bwd 产物校验）→ 复制唯一 `.whl` 到 `--dist-dir` |
 | `10.verify` | — | CPU wheel 冒烟（结构/CK fwd 符号/SHA256/manifest + pip 安装 + `is_ck_sdpa_available()`） |
 | `11.publish` | — | 准备 GitHub Release 元数据（`publish_release=true` 时，经 A99） |
 
-成功路径：A01 `watchdog/run` 成功 → `09.wheel` → `10.verify` → `11.publish`。看门狗 graceful abort 时 A01.1 save 后 workflow 调用 `watchdog/dispatch-retry`。
+成功路径：A01 `watchdog/run` 成功 → `09.wheel` → `10.verify` → `11.publish`。看门狗 graceful abort 时 A01 save 后 workflow 调用 `watchdog/dispatch-retry`。
 
 env 统一经 `scripts/lib/init-build-env.ts`（含 `SOURCE_DATE_EPOCH`，取自 `pytorch.build_commit_date`）。
 
@@ -147,12 +148,12 @@ GitHub Release（构建成功后自动上传；`publish_release=true` 时；**pr
 - `torch-*.whl.sha256`
 - `wheel.manifest.json`
 
-`wheel.manifest.json` 由 `10.verify` 写入（CI 经 `A99.pt-verify-publish` 上传）。主要字段：
+`wheel.manifest.json` 由 `10.verify` 写入（CI 经 `A99.verify-and-publish` 上传）。主要字段：
 
 | 字段 | 含义 |
 |------|------|
 | `dispatch` | `ninja_workers`、`use_cache`、`retry_count`（workflow 快照） |
-| `build_caches[]` | worktree cache 元数据（`opt_dim` / `key` / `exists` / `used`） |
+| `build_meta[]` | worktree + ccache 元数据（`opt_dim` / `worktree-cache-*` / `ccache-cache-*`） |
 | `ck_opt_dim`、`gpu_archs`、`ck_targets` | lock 编译配置快照 |
 | `fmha_bwd` | 顶层；是否 full-bwd 构建（当前 lock 恒为 `true`） |
 | `size_bytes`、`sha256` | wheel 体积与校验 |
@@ -172,7 +173,7 @@ torch-*+ck.rocm7.14.0.gfx120x*-cp312-cp312-win_amd64.whl
 
 | 检查 | 脚本 |
 |------|------|
-| CI smoke test（CPU） | `npx tsx scripts/cli.ts 10.verify --dist-dir dist --build-caches dist\build-caches.json` |
+| CI smoke test（CPU） | `npx tsx scripts/cli.ts 10.verify --dist-dir dist --build-meta dist\compile-success-meta.json` |
 | 部署前 GPU smoke test（gfx120x 真机） | `python test/gpu-smoke-test.py -w .` |
 
 Smoke test（`10.verify`，CPU）：wheel 文件名/结构（含 CK fwd dim 符号）→ SHA256 / manifest（含 `fmha_bwd`）→ pip 安装 → 校验 `torch.backends.cuda.is_ck_sdpa_available()`。CK FMHA **bwd** 在 `09.wheel` 前由 `build-pytorch-steps.py` 校验编译产物（`fmha_bwd_api.obj`、`mha_bwd_ck.hip.obj`、各 dim blob 及 `ck_sdpa.lib`/`torch_hip.dll` 链接新鲜度），不在 verify 扫 wheel 二进制。GPU 上跑 CK SDPA fwd/bwd 见 `test/gpu-smoke-test.py`（**先 pip install wheel**，部署前在 gfx120x 真机手动跑；不替代 `10.verify`；在 `TORCH_ROCM_FA_PREFER_CK=1` 下以 `sdpa_kernel(SDPBackend.FLASH_ATTENTION)` 限定 backend，确认 fwd/bwd 均走 CK 而非 math fallback）。

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import { runInstallWindowsDeps } from "./commands/00.install-windows-deps.js";
 import { runConfig } from "./commands/01.config.js";
 import { runToolchainFingerprint } from "./commands/02.toolchain-fingerprint.js";
 import { runPrep } from "./commands/03.prep.js";
@@ -15,6 +16,13 @@ import { runPublish } from "./commands/11.publish.js";
 const program = new Command();
 
 program.name("pt-build").description("PyTorch CK SDPA gfx120x 构建 CLI");
+
+program
+  .command("00.install-windows-deps")
+  .description("安装 ccache + libuv，并导出 CCACHE_* env（Windows CI bootstrap）")
+  .action(async () => {
+    await runInstallWindowsDeps();
+  });
 
 program
   .command("01.config")
@@ -90,17 +98,28 @@ program
 program
   .command("08.prepare")
   .description(
-    "初始化编译 env 并输出 command/args（供 watchdog/run spawn；cache-hit 时 ninja -C，miss 时 setup.py build）",
+    "初始化编译 env 并输出 command/args（供 watchdog/run spawn；--worktree-cache-used=true 且 build.ninja 存在时 ninja -C，否则 setup.py build）",
   )
   .requiredOption("--pt-src <path>")
+  .requiredOption(
+    "--worktree-cache-used <bool>",
+    "true when bootstrap restored worktree cache (A00 worktree-cache-used output)",
+  )
   .option(
     "--export-github-env",
     "将 initBuildEnv 编译变量（含 ccache/MSVC 路径）追加到 GITHUB_ENV",
   )
   .action((opts) => {
+    const worktreeCacheUsed = opts.worktreeCacheUsed;
+    if (worktreeCacheUsed !== "true" && worktreeCacheUsed !== "false") {
+      throw new Error(
+        `--worktree-cache-used must be 'true' or 'false', got ${worktreeCacheUsed}`,
+      );
+    }
     runPrepareBuild({
       ptSrc: opts.ptSrc,
       exportGithubEnv: Boolean(opts.exportGithubEnv),
+      worktreeCacheUsed: worktreeCacheUsed === "true",
     });
   });
 
@@ -123,13 +142,13 @@ program
   )
   .requiredOption("--dist-dir <path>")
   .requiredOption(
-    "--build-caches <path>",
-    "编译缓存元数据的 JSON 数组文件",
+    "--build-meta <path>",
+    "compile-success-meta.json 等编译缓存元数据文件",
   )
   .action((opts) => {
     runVerify({
       distDir: opts.distDir,
-      buildCaches: opts.buildCaches,
+      buildMeta: opts.buildMeta,
     });
   });
 

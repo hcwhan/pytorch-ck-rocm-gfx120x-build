@@ -1,9 +1,9 @@
-name: PT verify and publish
+name: Verify Wheel and Publish Release
 description: CPU 冒烟测试（10.verify）、上传 wheel artifact、可选 GitHub Release（11.publish + softprops）
 
 inputs:
-  build-caches:
-    description: 10.verify --build-caches 相对 GITHUB_WORKSPACE 的路径
+  build-meta:
+    description: 10.verify --build-meta 相对 GITHUB_WORKSPACE 的路径
     required: true
 
 runs:
@@ -13,8 +13,8 @@ runs:
       shell: pwsh
       run: |
         $distDir = Join-Path $env:GITHUB_WORKSPACE 'dist'
-        $buildCaches = Join-Path $env:GITHUB_WORKSPACE '${{ inputs.build-caches }}'
-        npx tsx scripts/cli.ts 10.verify --dist-dir $distDir --build-caches $buildCaches
+        $buildMeta = Join-Path $env:GITHUB_WORKSPACE '${{ inputs.build-meta }}'
+        npx tsx scripts/cli.ts 10.verify --dist-dir $distDir --build-meta $buildMeta
 
     - name: Upload wheel artifact
       uses: actions/upload-artifact@v7

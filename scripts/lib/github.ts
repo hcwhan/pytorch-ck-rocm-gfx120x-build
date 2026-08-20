@@ -29,3 +29,14 @@ export function appendGithubEnv(vars: Record<string, string>): void {
 export function appendGithubOutput(vars: Record<string, string>): void {
   appendGithubFile(process.env.GITHUB_OUTPUT, "GITHUB_OUTPUT", vars);
 }
+
+// 追加 GITHUB_PATH 目录（每行一个 path）
+export function appendGithubPath(dirs: string | readonly string[]): void {
+  const file = process.env.GITHUB_PATH;
+  if (!file) {
+    throw new Error("GITHUB_PATH is not set");
+  }
+  for (const dir of [dirs].flat()) {
+    appendFileSync(file, `${dir}\n`, "utf8");
+  }
+}

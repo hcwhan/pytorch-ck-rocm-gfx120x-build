@@ -1,7 +1,10 @@
-name: PT build with worktree cache
+name: Compile with cache
 description: prepare 编译命令 + watchdog/run + post-build cache save（use_cache=true 时 compile 非 skipped 即 save；false 时仅成功 save）
 
 inputs:
+  job-start-time:
+    description: UTC epoch 毫秒，来自 watchdog/job-start output
+    required: true
   pt-src:
     description: PyTorch 源码根目录
     required: true
@@ -9,8 +12,8 @@ inputs:
     description: true 时在 build 后 save worktree + ccache（非 skipped 即 save）；false 时仅成功时 save
     required: false
     default: "true"
-  job-start-time:
-    description: UTC epoch 毫秒，来自 watchdog/job-start output
+  worktree-cache-used:
+    description: A00 bootstrap output；worktree cache restore 命中（used 时须 verify 通过，否则 bootstrap 终止）
     required: true
 
 outputs:
@@ -33,23 +36,33 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Prepare build command
+    - name: Prepare compile command
       id: prepare
       shell: pwsh
-      run: npx tsx scripts/cli.ts 08.prepare --pt-src ${{ inputs.pt-src }} --export-github-env
+      run: npx tsx scripts/cli.ts 08.prepare --pt-src ${{ inputs.pt-src }} --export-github-env --worktree-cache-used ${{ inputs.worktree-cache-used }}
 
-    - name: Run build with watchdog
+    - name: Run compile with watchdog
       id: run-task
       uses: hcwhan/actions/kit/watchdog/run@main
       with:
         working-directory: ${{ inputs.pt-src }}
-        command: '${{ steps.prepare.outputs.command }}'
-        args: '${{ steps.prepare.outputs.args }}'
+        command: ${{ steps.prepare.outputs.command }}
+        args: ${{ steps.prepare.outputs.args }}
         job-start-time: ${{ inputs.job-start-time }}
         limit-hours: "5"
 
-    - name: Post-build cache save
+    - name: Save worktree cache
       if: always() && steps.run-task.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-task.conclusion == 'success') && steps.run-task.outputs.force-killed != 'true'
-      uses: "./.github/actions/A01.pt-build-with-cache/A01.1.pt-post-build-caches"
+      uses: hcwhan/actions/kit/cache/save@main
       with:
-        pt-src: ${{ inputs.pt-src }}
+        path: ${{ inputs.pt-src }}
+        family-key: ${{ env.WORKTREE_CACHE_PREFIX }}
+        cache-key: ${{ env.WORKTREE_CACHE_KEY }}
+
+    - name: Save ccache cache
+      if: always() && steps.run-task.conclusion != 'skipped' && (inputs.use-cache == 'true' || steps.run-task.conclusion == 'success') && steps.run-task.outputs.force-killed != 'true'
+      uses: hcwhan/actions/kit/cache/save@main
+      with:
+        path: ${{ runner.temp }}/ccache
+        family-key: ${{ env.CCACHE_CACHE_PREFIX }}
+        cache-key: ${{ env.CCACHE_CACHE_KEY }}

@@ -79,7 +79,7 @@ Push to `main` does **not** auto-trigger builds.
 | Input | Default | Description |
 |-------|---------|-------------|
 | `ninja_workers` | `4` | Ninja parallel workers (use `2` if OOM) |
-| `use_cache` | `true` | When `true`, restore worktree; save after compile when not skipped (includes failure/watchdog abort; except `force-killed`). When `false`, skip restore (still probes `exists`; `used=false`); save only after a successful compile |
+| `use_cache` | `true` | When `true`, restore worktree + ccache; save after compile when not skipped (includes failure/watchdog abort; except `force-killed`). When `false`, skip restore for both (`restore` + `only-lookup` still probes `exists`; `used=false`); save only after a successful compile |
 | `publish_release` | `true` | Set `false` to skip GitHub Release upload |
 | `retry_count` | `0` | Auto-incremented by watchdog retry; keep the default when triggering manually; **do not change** |
 
@@ -110,26 +110,27 @@ wheel / verify / publish do not run unless compile succeeds. `wheel.manifest.jso
 - `msvcVersion`: latest MSVC toolset dir name from vswhere (full version, e.g. `14.42.34433`)
 - `rocmClangVersion`: full version token parsed from `clang --version` (e.g. `19.0.0git`)
 - `ninja` / `cmake`: major.minor from `ninja --version` / `cmake --version`
-- **Versioned GHA cache** (`hcwhan/actions/kit/cache@main`: `cache-key` slot + UTC suffix; restore picks newest versioned key in slot; save verifies via API + family cleanup)
+- **Versioned GHA cache** (`hcwhan/actions/kit/cache@main`: `cache-key` slot + UTC suffix; restore (including `only-lookup`) picks newest versioned key in slot; save verifies via API + family cleanup)
 - **hit + verify pass**: skip prep / patch / hipify
 - **compile**: on cache-hit with valid `build.ninja`, **`ninja -C build install`** (skips CMake reconfigure); otherwise **`setup.py build`** via `build-pytorch-steps.py --step build`
 - **save**: `use_cache=true` saves after compile (not skipped); `use_cache=false` saves only on success
-- **miss / verify fail**: prep → patch → hipify → compile → save
+- **miss**: prep → patch → hipify → compile → save
+- **hit + verify fail**: job fails (no fallback rebuild)
 
 A separate **pip toolchain cache** (`PIP_TOOLCHAIN_CACHE_KEY`: `pt-pip-toolchain-v2-py[{python}]-rocm[{rocm}]-idx[{indexHash8}]`, `indexHash8` = lock `toolchain.rocm_index` → SHA256 prefix) and **ccache** (`CCACHE_CACHE_KEY`: `ccache-v3-lock[{lockHash8}]-patch[{patchHash8}]-msvc[{msvcVersion}]-rocmClang[{rocmClangVersion}]-ninja[{ninjaMinor}]-cmake[{cmakeMinor}]`, no `lockWheel`) layer above worktree cache.
 
 ### Build stages
 
-After bootstrap (`01.config`–`07.pin-mtimes`, via A00), the serial workflow runs CLI `08`–`11` in order; `09.wheel` invokes `build/build-pytorch-steps.py --step wheel`:
+After bootstrap (`00.install-windows-deps` + `01.config`–`07.pin-mtimes`, via A00), the serial workflow runs CLI `08`–`11` in order; `09.wheel` invokes `build/build-pytorch-steps.py --step wheel`:
 
 | CLI | setuptools step | Role |
 |-----|-----------------|------|
-| `08.prepare` | `prepare` | Initialize build env and output command/args; forwarded to `watchdog/run` by A01 |
+| `08.prepare` | `prepare` | Initialize build env and output command/args (`--worktree-cache-used` selects ninja vs setup.py); forwarded to `watchdog/run` by A01 |
 | `09.wheel` | `wheel` | `build-pytorch-steps --step wheel` (includes bwd artifact verify) → copy single `.whl` to `--dist-dir` |
 | `10.verify` | — | CPU wheel smoke test (structure/CK fwd symbols/SHA256/manifest + pip install + `is_ck_sdpa_available()`) |
 | `11.publish` | — | Prepare GitHub Release metadata (`publish_release=true`, via A99) |
 
-Success path: A01 `watchdog/run` succeeds → `09.wheel` → `10.verify` → `11.publish`. On watchdog graceful abort, A01.1 save then workflow calls `watchdog/dispatch-retry`.
+Success path: A01 `watchdog/run` succeeds → `09.wheel` → `10.verify` → `11.publish`. On watchdog graceful abort, A01 save then workflow calls `watchdog/dispatch-retry`.
 
 Env is set uniformly via `scripts/lib/init-build-env.ts` (includes `SOURCE_DATE_EPOCH` from `pytorch.build_commit_date`).
 
@@ -152,12 +153,12 @@ gh release list
 gh release download torch-ck-cp312-rocm7.14.0-gfx120x-serial-build123 -D .\dist
 ```
 
-`wheel.manifest.json` is written by `10.verify` (uploaded via `A99.pt-verify-publish` in CI). Main fields:
+`wheel.manifest.json` is written by `10.verify` (uploaded via `A99.verify-and-publish` in CI). Main fields:
 
 | Field | Meaning |
 |-------|---------|
 | `dispatch` | `ninja_workers`, `use_cache`, `retry_count` (workflow snapshot) |
-| `build_caches[]` | worktree cache metadata (`opt_dim` / `key` / `exists` / `used`) |
+| `build_meta[]` | worktree + ccache metadata (`opt_dim` / `worktree-cache-*` / `ccache-cache-*`) |
 | `ck_opt_dim`, `gpu_archs`, `ck_targets` | lock compile config snapshot |
 | `fmha_bwd` | top-level; full-bwd build profile (always `true` under current lock) |
 | `size_bytes`, `sha256` | wheel size and checksum |
@@ -172,7 +173,7 @@ torch-*+ck.rocm7.14.0.gfx120x*-cp312-cp312-win_amd64.whl
 
 | Check | Script |
 |-------|--------|
-| CI smoke test (CPU) | `npx tsx scripts/cli.ts 10.verify --dist-dir dist --build-caches dist\build-caches.json` |
+| CI smoke test (CPU) | `npx tsx scripts/cli.ts 10.verify --dist-dir dist --build-meta dist\compile-success-meta.json` |
 | Pre-deploy GPU smoke test (gfx120x hardware) | `python test/gpu-smoke-test.py -w .` |
 
 Smoke test (`10.verify`, CPU): wheel filename/structure (CK fwd dim markers) → SHA256 / manifest (includes `fmha_bwd`) → pip install → `torch.backends.cuda.is_ck_sdpa_available()`. CK FMHA **bwd** is verified at compile artifacts before `09.wheel` via `build-pytorch-steps.py` (`fmha_bwd_api.obj`, `mha_bwd_ck.hip.obj`, per-dim blobs, and `ck_sdpa.lib`/`torch_hip.dll` link freshness)—not by scanning wheel binaries in verify. GPU CK SDPA fwd/bwd is in `test/gpu-smoke-test.py` (**pip install the wheel first**; run manually on gfx120x hardware before deploy; does not replace `10.verify`; uses `sdpa_kernel(SDPBackend.FLASH_ATTENTION)` under `TORCH_ROCM_FA_PREFER_CK=1` so fwd/bwd must use CK, not math fallback).
